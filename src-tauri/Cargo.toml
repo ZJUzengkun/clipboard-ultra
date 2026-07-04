@@ -29,6 +29,6 @@ clipboard-rs = "0.2"
 sha2 = "0.10"
 enigo = { version = "0.2", features = ["serde"] }
 chrono = "0.4"
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 uuid = { version = "1", features = ["v4"] }
 
