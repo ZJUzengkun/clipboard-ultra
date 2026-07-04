@@ -23,7 +23,8 @@
         "visible": false,
         "center": true,
         "skipTaskbar": true,
-        "focus": false
+        "focus": false,
+        "backgroundColor": "#16161e"
       }
     ],
     "security": {

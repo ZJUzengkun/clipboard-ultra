@@ -54,16 +54,28 @@ function App() {
     loadItems();
     refreshInterval = window.setInterval(loadItems, 1000);
 
-    // 窗口失焦时自动隐藏
+    // 窗口失焦时自动隐藏（带 debounce 防止 show 后立即触发 blur）
     const appWindow = getCurrentWindow();
+    let showTimestamp = 0;
+
+    // 监听窗口显示事件，记录时间戳
+    const unlistenShow = appWindow.listen("tauri://focus", () => {
+      showTimestamp = Date.now();
+    });
+
     const unlisten = appWindow.onFocusChanged(({ payload: focused }) => {
       if (!focused) {
-        appWindow.hide();
+        // 如果窗口刚获得焦点不到 300ms，不要隐藏（防止闪屏）
+        const elapsed = Date.now() - showTimestamp;
+        if (elapsed > 300) {
+          appWindow.hide();
+        }
       }
     });
 
     onCleanup(() => {
       unlisten.then((fn) => fn());
+      unlistenShow.then((fn) => fn());
     });
 
     // 监听系统主题变化

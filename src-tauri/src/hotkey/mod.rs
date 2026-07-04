@@ -16,6 +16,8 @@ pub fn register_shortcuts(app: &AppHandle) -> Result<(), Box<dyn std::error::Err
                         if window.is_visible().unwrap_or(false) {
                             let _ = window.hide();
                         } else {
+                            // 先定位到屏幕中央，再显示并聚焦
+                            let _ = window.center();
                             let _ = window.show();
                             let _ = window.set_focus();
                         }
