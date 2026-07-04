@@ -506,7 +506,7 @@ dependencies = [
 
 [[package]]
 name = "clipboard-pro"
-version = "0.5.0"
+version = "0.5.2"
 dependencies = [
  "chrono",
  "clipboard-rs",

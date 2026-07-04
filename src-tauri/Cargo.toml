@@ -1,6 +1,6 @@
 [package]
 name = "clipboard-pro"
-version = "0.5.2"
+version = "0.5.3"
 description = "A lightweight cross-platform clipboard history manager"
 authors = ["ZJUzengkun"]
 license = "MIT"
@@ -32,4 +32,10 @@ chrono = "0.4"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 uuid = { version = "1", features = ["v4"] }
 regex = "1"
+
+[profile.release]
+codegen-units = 16    # 多单元并行 CodeGen，加速编译
+lto = "thin"          # Thin LTO 比 Fat LTO 快很多，优化效果接近
+opt-level = 2         # 编译快于 opt-level=3，运行时性能差异极小
+strip = true          # 剥离调试符号，减小产物体积
 
