@@ -44,15 +44,6 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "createUpdaterArtifacts": "v1Compatible"
-  },
-  "plugins": {
-    "updater": {
-      "endpoints": [
-        "https://github.com/ZJUzengkun/clipboard-pro/releases/latest/download/latest.json"
-      ],
-      "pubkey": ""
-    }
+    ]
   }
 }
