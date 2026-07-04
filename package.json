@@ -1,6 +1,6 @@
 {
   "name": "clipboard-pro",
-  "version": "0.5.4",
+  "version": "0.5.5"
   "description": "A lightweight cross-platform clipboard history manager",
   "type": "module",
   "scripts": {

@@ -231,9 +231,12 @@ function App() {
         break;
       case "Backspace":
       case "Delete":
-        e.preventDefault();
-        if (list[selectedIndex()]) {
-          handleDelete(list[selectedIndex()].id);
+        // 仅当焦点不在任何输入控件时（即在剪贴板列表区域），才作为删除快捷键
+        if (document.activeElement === document.body || document.activeElement?.closest(".clipboard-list")) {
+          e.preventDefault();
+          if (list[selectedIndex()]) {
+            handleDelete(list[selectedIndex()].id);
+          }
         }
         break;
       case "Escape":

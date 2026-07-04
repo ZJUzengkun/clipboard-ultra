@@ -91,44 +91,44 @@ pub fn paste_item(
         let _ = window.hide();
     }
 
-    // macOS: 激活之前的前台应用，恢复焦点
+    // 模拟粘贴快捷键
     #[cfg(target_os = "macos")]
     {
+        // macOS: 用 AppleScript 激活前台应用并发送 Cmd+V
+        // 比 enigo 更可靠 — 走系统事件管道，不受窗口焦点链影响
         let prev = state.previous_app.lock().unwrap().take();
-        if let Some(bundle_id) = prev {
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            let script = if let Some(bundle_id) = prev {
+                format!(
+                    "tell application id \"{}\" to activate\ndelay 0.1\ntell application \"System Events\" to keystroke \"v\" using command down",
+                    bundle_id
+                )
+            } else {
+                "delay 0.1\ntell application \"System Events\" to keystroke \"v\" using command down".to_string()
+            };
             let _ = std::process::Command::new("osascript")
-                .args(["-e", &format!(
-                    "tell application id \"{}\" to activate", bundle_id
-                )])
+                .args(["-e", &script])
                 .output();
-        }
+        });
     }
 
-    // 模拟粘贴快捷键
-    // 注意：macOS 上 enigo 调用 TSMGetInputSourceProperty 必须在主线程执行，
-    // 否则切换输入法后会触发 dispatch_assert_queue_fail 导致 SIGTRAP 崩溃。
-    let handle = app_handle.clone();
-    std::thread::spawn(move || {
-        // 等待目标应用重新获得焦点
-        std::thread::sleep(std::time::Duration::from_millis(300));
-        let _ = handle.run_on_main_thread(move || {
-            if let Ok(mut enigo) = enigo::Enigo::new(&enigo::Settings::default()) {
-                use enigo::{Direction, Key, Keyboard};
-                #[cfg(target_os = "macos")]
-                {
-                    let _ = enigo.key(Key::Meta, Direction::Press);
-                    let _ = enigo.key(Key::Unicode('v'), Direction::Click);
-                    let _ = enigo.key(Key::Meta, Direction::Release);
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Windows/Linux: 用 enigo 模拟 Ctrl+V
+        let handle = app_handle.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let _ = handle.run_on_main_thread(move || {
+                if let Ok(mut enigo) = enigo::Enigo::new(&enigo::Settings::default()) {
+                    use enigo::{Direction, Key, Keyboard};
                     let _ = enigo.key(Key::Control, Direction::Press);
                     let _ = enigo.key(Key::Unicode('v'), Direction::Click);
                     let _ = enigo.key(Key::Control, Direction::Release);
                 }
-            }
+            });
         });
-    });
+    }
 
     Ok(())
 }
