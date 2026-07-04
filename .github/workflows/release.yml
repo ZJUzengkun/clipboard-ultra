@@ -6,7 +6,31 @@ on:
       - 'v*'
 
 jobs:
+  create-release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create.outputs.result }}
+    steps:
+      - name: Create Release
+        id: create
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: context.ref.replace('refs/tags/', ''),
+              name: `Clipboard Pro ${context.ref.replace('refs/tags/', '')}`,
+              body: 'See the assets to download and install this version.',
+              draft: true,
+              prerelease: false
+            });
+            return data.id;
+
   build:
+    needs: create-release
     permissions:
       contents: write
     strategy:
@@ -71,9 +95,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Clipboard Pro ${{ github.ref_name }}'
-          releaseBody: 'See the assets to download and install this version.'
-          releaseDraft: true
-          prerelease: false
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
