@@ -88,23 +88,28 @@ pub fn paste_item(
     }
 
     // 模拟粘贴快捷键
-    std::thread::spawn(|| {
+    // 注意：macOS 上 enigo 调用 TSMGetInputSourceProperty 必须在主线程执行，
+    // 否则切换输入法后会触发 dispatch_assert_queue_fail 导致 SIGTRAP 崩溃。
+    let handle = app_handle.clone();
+    std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(100));
-        if let Ok(mut enigo) = enigo::Enigo::new(&enigo::Settings::default()) {
-            use enigo::{Direction, Key, Keyboard};
-            #[cfg(target_os = "macos")]
-            {
-                let _ = enigo.key(Key::Meta, Direction::Press);
-                let _ = enigo.key(Key::Unicode('v'), Direction::Click);
-                let _ = enigo.key(Key::Meta, Direction::Release);
+        let _ = handle.run_on_main_thread(move || {
+            if let Ok(mut enigo) = enigo::Enigo::new(&enigo::Settings::default()) {
+                use enigo::{Direction, Key, Keyboard};
+                #[cfg(target_os = "macos")]
+                {
+                    let _ = enigo.key(Key::Meta, Direction::Press);
+                    let _ = enigo.key(Key::Unicode('v'), Direction::Click);
+                    let _ = enigo.key(Key::Meta, Direction::Release);
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = enigo.key(Key::Control, Direction::Press);
+                    let _ = enigo.key(Key::Unicode('v'), Direction::Click);
+                    let _ = enigo.key(Key::Control, Direction::Release);
+                }
             }
-            #[cfg(not(target_os = "macos"))]
-            {
-                let _ = enigo.key(Key::Control, Direction::Press);
-                let _ = enigo.key(Key::Unicode('v'), Direction::Click);
-                let _ = enigo.key(Key::Control, Direction::Release);
-            }
-        }
+        });
     });
 
     Ok(())
