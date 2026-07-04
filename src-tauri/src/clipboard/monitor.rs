@@ -1,8 +1,10 @@
 use clipboard_rs::{common::RustImage, Clipboard, ClipboardContext, RustImageData};
 use image::GenericImageView;
 use sha2::{Digest, Sha256};
+use std::panic;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
@@ -15,6 +17,8 @@ pub struct ClipboardMonitor {
     blobs_dir: PathBuf,
     app_handle: AppHandle,
     last_hash: std::sync::Mutex<String>,
+    /// 标志位：当我们自己写入剪贴板时临时跳过检测，避免回环
+    pub skip_next: Arc<AtomicBool>,
 }
 
 impl ClipboardMonitor {
@@ -26,6 +30,7 @@ impl ClipboardMonitor {
             blobs_dir,
             app_handle,
             last_hash: std::sync::Mutex::new(String::new()),
+            skip_next: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -46,12 +51,27 @@ impl ClipboardMonitor {
             };
 
             loop {
-                // 优先检测图片
-                if let Ok(image_data) = ctx.get_image() {
-                    self.handle_image(image_data);
-                } else if let Ok(text) = ctx.get_text() {
-                    self.handle_text(&text);
+                // 如果是我们自己写入的，跳过本轮检测
+                if self.skip_next.swap(false, Ordering::SeqCst) {
+                    std::thread::sleep(Duration::from_millis(500));
+                    continue;
                 }
+
+                // 使用 catch_unwind 保护，防止 clipboard-rs 内部 panic 导致进程崩溃
+                let monitor = self.clone();
+                let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                    // 优先检测图片
+                    if let Ok(image_data) = ctx.get_image() {
+                        monitor.handle_image(image_data);
+                    } else if let Ok(text) = ctx.get_text() {
+                        monitor.handle_text(&text);
+                    }
+                }));
+
+                if let Err(e) = result {
+                    eprintln!("Clipboard poll panic caught: {:?}", e);
+                }
+
                 std::thread::sleep(Duration::from_millis(500));
             }
         });

@@ -2,12 +2,15 @@ use crate::db::{operations::{ClipboardItem, TagRule}, Database};
 use clipboard_rs::{common::RustImage, Clipboard, ClipboardContext};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Manager, State};
 
 /// 应用全局状态，存储数据库引用和 blob 目录
 pub struct AppState {
     pub db: Arc<Database>,
     pub blobs_dir: PathBuf,
+    /// 粘贴时设置此标志，让 monitor 跳过下一次检测
+    pub skip_clipboard_check: Arc<AtomicBool>,
 }
 
 /// 获取剪贴板历史列表
@@ -54,6 +57,8 @@ pub fn paste_item(
         .ok_or_else(|| "Item not found".to_string())?;
 
     // 写入系统剪贴板
+    // 设置跳过标志，防止 monitor 回环检测到自己写入的内容
+    state.skip_clipboard_check.store(true, Ordering::SeqCst);
     let ctx = ClipboardContext::new().map_err(|e| e.to_string())?;
 
     if item.content_type == "image" {
