@@ -94,22 +94,30 @@ pub fn paste_item(
     // 模拟粘贴快捷键
     #[cfg(target_os = "macos")]
     {
-        // macOS: 用 AppleScript 激活前台应用并发送 Cmd+V
-        // 比 enigo 更可靠 — 走系统事件管道，不受窗口焦点链影响
+        // macOS: osascript 恢复焦点 + enigo 发送 Cmd+V
+        // System Events keystroke 需要 Automation 权限（用户可能未授予），
+        // 而 enigo 走 Accessibility 权限（已确认开启），所以分开处理更可靠
         let prev = state.previous_app.lock().unwrap().take();
+        let handle = app_handle.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            let script = if let Some(bundle_id) = prev {
-                format!(
-                    "tell application id \"{}\" to activate\ndelay 0.1\ntell application \"System Events\" to keystroke \"v\" using command down",
-                    bundle_id
-                )
-            } else {
-                "delay 0.1\ntell application \"System Events\" to keystroke \"v\" using command down".to_string()
-            };
-            let _ = std::process::Command::new("osascript")
-                .args(["-e", &script])
-                .output();
+            // 1. 用 osascript 激活前台应用
+            if let Some(bundle_id) = prev {
+                let _ = std::process::Command::new("osascript")
+                    .args(["-e", &format!(
+                        "tell application id \"{}\" to activate", bundle_id
+                    )])
+                    .output();
+            }
+            // 2. 等待焦点稳定后用 enigo 发送 Cmd+V
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let _ = handle.run_on_main_thread(move || {
+                if let Ok(mut enigo) = enigo::Enigo::new(&enigo::Settings::default()) {
+                    use enigo::{Direction, Key, Keyboard};
+                    let _ = enigo.key(Key::Meta, Direction::Press);
+                    let _ = enigo.key(Key::Unicode('v'), Direction::Click);
+                    let _ = enigo.key(Key::Meta, Direction::Release);
+                }
+            });
         });
     }
 
