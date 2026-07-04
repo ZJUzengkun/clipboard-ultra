@@ -57,6 +57,7 @@ jobs:
           SCCACHE_GHA_ENABLED: 'true'
           RUSTC_WRAPPER: sccache
           CARGO_INCREMENTAL: '0'
+        continue-on-error: true
 
   # 正式发布：tag push 时创建 Release 并上传产物
   create-release:
@@ -127,11 +128,23 @@ jobs:
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
+        id: tauri-build
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SCCACHE_GHA_ENABLED: 'true'
           RUSTC_WRAPPER: sccache
           CARGO_INCREMENTAL: '0'
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          args: ${{ matrix.args }}
+
+      - name: Build Tauri app (fallback without sccache)
+        if: steps.tauri-build.outcome == 'failure'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_INCREMENTAL: '1'
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
