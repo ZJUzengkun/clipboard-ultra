@@ -34,6 +34,18 @@ function App() {
   onMount(() => {
     loadItems();
     refreshInterval = window.setInterval(loadItems, 1000);
+
+    // 窗口失焦时自动隐藏
+    const appWindow = getCurrentWindow();
+    const unlisten = appWindow.onFocusChanged(({ payload: focused }) => {
+      if (!focused) {
+        appWindow.hide();
+      }
+    });
+
+    onCleanup(() => {
+      unlisten.then((fn) => fn());
+    });
   });
 
   onCleanup(() => {
