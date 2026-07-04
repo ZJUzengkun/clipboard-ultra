@@ -1,39 +1,83 @@
 /* ========================================
-   ClipBoard Pro — 温暖暗夜工具风
+   ClipBoard Pro — Frost Glass Utility
+   精致磨砂工具风，双主题支持
    ======================================== */
 
-:root {
-  /* 色彩系统 */
-  --bg-primary: #1a1b26;
-  --bg-secondary: #24253a;
-  --bg-elevated: #2a2b3d;
-  --bg-hover: #32334a;
+/* ======== Theme Variables ======== */
+:root,
+[data-theme="dark"] {
+  --bg-base: #0f0f14;
+  --bg-primary: #16161e;
+  --bg-secondary: #1e1e2a;
+  --bg-elevated: #262636;
+  --bg-hover: #2c2c3e;
+  --bg-glass: rgba(30, 30, 42, 0.72);
 
-  --text-primary: #e0dff4;
-  --text-secondary: #9896b0;
-  --text-muted: #6b6982;
+  --text-primary: #eae9fc;
+  --text-secondary: #a09fbd;
+  --text-muted: #5c5b73;
+  --text-hint: #44435a;
 
-  --accent-amber: #e8a838;
-  --accent-amber-dim: rgba(232, 168, 56, 0.15);
-  --accent-teal: #5ec4b6;
-  --accent-teal-dim: rgba(94, 196, 182, 0.12);
-  --accent-rose: #e06c75;
-  --accent-rose-dim: rgba(224, 108, 117, 0.12);
+  --accent: #7c6df0;
+  --accent-soft: rgba(124, 109, 240, 0.12);
+  --accent-glow: rgba(124, 109, 240, 0.25);
+  --accent-warm: #f0a050;
+  --accent-warm-soft: rgba(240, 160, 80, 0.12);
+  --accent-danger: #f06070;
+  --accent-danger-soft: rgba(240, 96, 112, 0.1);
+  --accent-success: #50d0a0;
 
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-focus: rgba(94, 196, 182, 0.4);
+  --border: rgba(255, 255, 255, 0.05);
+  --border-active: rgba(124, 109, 240, 0.35);
 
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.3), 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 20px rgba(124, 109, 240, 0.1);
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
 
-  --transition-fast: 120ms ease;
-  --transition-normal: 200ms ease;
+  --duration-fast: 100ms;
+  --duration-normal: 180ms;
+  --duration-slow: 300ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+[data-theme="light"] {
+  --bg-base: #f4f4f8;
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8f8fb;
+  --bg-elevated: #ffffff;
+  --bg-hover: #f0f0f6;
+  --bg-glass: rgba(255, 255, 255, 0.8);
+
+  --text-primary: #1a1a2e;
+  --text-secondary: #5a5a7a;
+  --text-muted: #9a9ab0;
+  --text-hint: #c0c0d0;
+
+  --accent: #6355e0;
+  --accent-soft: rgba(99, 85, 224, 0.08);
+  --accent-glow: rgba(99, 85, 224, 0.15);
+  --accent-warm: #e09030;
+  --accent-warm-soft: rgba(224, 144, 48, 0.08);
+  --accent-danger: #e04050;
+  --accent-danger-soft: rgba(224, 64, 80, 0.06);
+  --accent-success: #30b080;
+
+  --border: rgba(0, 0, 0, 0.06);
+  --border-active: rgba(99, 85, 224, 0.4);
+
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-elevated: 0 4px 20px rgba(0, 0, 0, 0.08);
+  --shadow-glow: 0 0 20px rgba(99, 85, 224, 0.06);
+}
+
+/* ======== Reset & Base ======== */
 * {
   margin: 0;
   padding: 0;
@@ -41,22 +85,38 @@
 }
 
 body {
-  font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  background: var(--bg-primary);
+  font-family: "Geist", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: var(--bg-base);
   color: var(--text-primary);
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
   font-size: 13px;
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* ======== App Layout ======== */
+/* ======== App Container ======== */
 .app {
   display: flex;
   flex-direction: column;
   height: 100vh;
   background: var(--bg-primary);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  animation: windowEnter var(--duration-slow) var(--ease-out) forwards;
+}
+
+@keyframes windowEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 /* ======== Titlebar ======== */
@@ -64,8 +124,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px 6px;
+  padding: 12px 16px 4px;
   cursor: grab;
+  flex-shrink: 0;
 }
 
 .titlebar:active {
@@ -73,57 +134,92 @@ body {
 }
 
 .titlebar-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  letter-spacing: 0.3px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.8px;
   text-transform: uppercase;
 }
 
+.titlebar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .titlebar-count {
-  font-size: 11px;
+  font-size: 10px;
+  color: var(--text-hint);
+  background: var(--bg-secondary);
+  padding: 2px 7px;
+  border-radius: var(--radius-xs);
+  font-weight: 500;
+}
+
+.btn-theme {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
   color: var(--text-muted);
+  transition: color var(--duration-fast), background var(--duration-fast);
+}
+
+.btn-theme:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.btn-theme svg {
+  width: 12px;
+  height: 12px;
 }
 
 /* ======== Search Bar ======== */
 .search-bar {
   position: relative;
-  padding: 4px 12px 12px;
+  padding: 8px 12px 12px;
+  flex-shrink: 0;
 }
 
 .search-bar input {
   width: 100%;
-  padding: 9px 12px 9px 36px;
-  border: 1px solid var(--border-subtle);
+  padding: 10px 12px 10px 38px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-secondary);
   color: var(--text-primary);
   font-size: 13px;
   font-family: inherit;
   outline: none;
-  transition: border-color var(--transition-normal), background var(--transition-normal), box-shadow var(--transition-normal);
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .search-bar input:focus {
-  border-color: var(--border-focus);
+  border-color: var(--border-active);
   background: var(--bg-elevated);
-  box-shadow: 0 0 0 3px var(--accent-teal-dim);
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-glow);
 }
 
 .search-bar input::placeholder {
-  color: var(--text-muted);
+  color: var(--text-hint);
 }
 
 .search-icon {
   position: absolute;
-  left: 24px;
+  left: 25px;
   top: 50%;
   transform: translateY(-50%);
-  width: 15px;
-  height: 15px;
-  color: var(--text-muted);
+  width: 14px;
+  height: 14px;
+  color: var(--text-hint);
   pointer-events: none;
-  margin-top: -4px;
+  margin-top: 2px;
 }
 
 .clear-btn {
@@ -142,28 +238,31 @@ body {
   color: var(--text-secondary);
   cursor: pointer;
   padding: 3px;
-  margin-top: -4px;
-  transition: color var(--transition-fast), background var(--transition-fast);
+  margin-top: 2px;
+  transition: all var(--duration-fast);
 }
 
 .clear-btn:hover {
-  color: var(--text-primary);
-  background: var(--accent-rose-dim);
+  color: var(--accent-danger);
+  background: var(--accent-danger-soft);
+  transform: translateY(-50%) scale(1.1);
 }
 
 .clear-btn svg {
-  width: 12px;
-  height: 12px;
+  width: 11px;
+  height: 11px;
 }
 
 /* ======== Clipboard List ======== */
 .clipboard-list {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 0 8px 8px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
+  scroll-behavior: smooth;
 }
 
 /* ======== Clipboard Item ======== */
@@ -172,33 +271,52 @@ body {
   border-radius: var(--radius-sm);
   cursor: pointer;
   border: 1px solid transparent;
-  transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
   position: relative;
+  transition:
+    background var(--duration-fast),
+    border-color var(--duration-normal) var(--ease-out),
+    box-shadow var(--duration-normal) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+  animation: itemSlideIn var(--duration-normal) var(--ease-out) both;
+}
+
+@keyframes itemSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .clipboard-item:hover {
   background: var(--bg-hover);
+  border-color: var(--border);
 }
 
 .clipboard-item.selected {
   background: var(--bg-elevated);
-  border-color: var(--border-focus);
-  box-shadow: var(--shadow-sm);
+  border-color: var(--border-active);
+  box-shadow: var(--shadow-card), 0 0 0 1px var(--accent-soft);
 }
 
+.clipboard-item:active {
+  transform: scale(0.99);
+}
+
+/* Pinned state */
 .clipboard-item.pinned {
-  border-left: 3px solid var(--accent-amber);
+  border-left: 3px solid var(--accent-warm);
   padding-left: 10px;
+  background: var(--accent-warm-soft);
 }
 
-.clipboard-item.pinned::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: var(--radius-sm);
-  background: var(--accent-amber-dim);
-  pointer-events: none;
-  opacity: 0.4;
+.clipboard-item.pinned.selected {
+  border-color: var(--accent-warm);
+  border-left-color: var(--accent-warm);
+  box-shadow: var(--shadow-card);
 }
 
 /* ======== Item Content ======== */
@@ -207,16 +325,18 @@ body {
 }
 
 .item-content pre {
-  font-family: "SF Mono", "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
-  font-size: 12px;
-  line-height: 1.5;
+  font-family: "JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code", monospace;
+  font-size: 11.5px;
+  line-height: 1.6;
   color: var(--text-primary);
   white-space: pre-wrap;
   word-break: break-all;
-  max-height: 54px;
+  max-height: 52px;
   overflow: hidden;
   margin: 0;
   background: none;
+  mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
 }
 
 /* ======== Item Footer ======== */
@@ -224,25 +344,29 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-top: 4px;
 }
 
 .item-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .item-time {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-muted);
+  font-weight: 500;
 }
 
 .item-chars {
-  font-size: 10px;
-  color: var(--text-muted);
+  font-size: 9px;
+  color: var(--text-hint);
   background: var(--bg-secondary);
   padding: 1px 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
+  font-weight: 500;
+  letter-spacing: 0.2px;
 }
 
 /* ======== Item Actions ======== */
@@ -250,43 +374,49 @@ body {
   display: flex;
   gap: 2px;
   opacity: 0;
-  transition: opacity var(--transition-fast);
+  transform: translateX(4px);
+  transition: all var(--duration-normal) var(--ease-out);
 }
 
 .clipboard-item:hover .item-actions,
 .clipboard-item.selected .item-actions {
   opacity: 1;
+  transform: translateX(0);
 }
 
 .btn-action {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border: none;
   background: transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   cursor: pointer;
   color: var(--text-muted);
   padding: 5px;
-  transition: color var(--transition-fast), background var(--transition-fast);
+  transition: all var(--duration-fast);
 }
 
 .btn-action svg {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
+}
+
+.btn-action:hover {
+  transform: scale(1.15);
 }
 
 .btn-pin:hover,
 .btn-pin.active {
-  color: var(--accent-amber);
-  background: var(--accent-amber-dim);
+  color: var(--accent-warm);
+  background: var(--accent-warm-soft);
 }
 
 .btn-delete:hover {
-  color: var(--accent-rose);
-  background: var(--accent-rose-dim);
+  color: var(--accent-danger);
+  background: var(--accent-danger-soft);
 }
 
 /* ======== Empty State ======== */
@@ -295,57 +425,108 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 60px 20px;
+  padding: 48px 32px;
   color: var(--text-muted);
-  gap: 8px;
+  gap: 12px;
+  animation: emptyFadeIn 0.5s var(--ease-out) both;
+  animation-delay: 0.1s;
 }
 
-.empty-state svg {
-  width: 40px;
-  height: 40px;
-  opacity: 0.4;
+@keyframes emptyFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.empty-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-soft);
+  border-radius: var(--radius-md);
   margin-bottom: 4px;
+}
+
+.empty-icon svg {
+  width: 24px;
+  height: 24px;
+  color: var(--accent);
+  opacity: 0.7;
 }
 
 .empty-state p {
   font-size: 14px;
+  font-weight: 600;
   color: var(--text-secondary);
 }
 
 .empty-state span {
   font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.6;
+}
+
+.empty-shortcut {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-hint);
+}
+
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  line-height: 1;
 }
 
 /* ======== Scrollbar ======== */
 .clipboard-list::-webkit-scrollbar {
-  width: 5px;
+  width: 4px;
 }
 
 .clipboard-list::-webkit-scrollbar-track {
   background: transparent;
+  margin: 4px 0;
 }
 
 .clipboard-list::-webkit-scrollbar-thumb {
-  background: var(--border-subtle);
-  border-radius: 3px;
+  background: var(--border);
+  border-radius: 4px;
+  transition: background 0.2s;
 }
 
 .clipboard-list::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
 }
 
-/* ======== Animations ======== */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+/* ======== Stagger Animation Delays ======== */
+.clipboard-item:nth-child(1) { animation-delay: 0ms; }
+.clipboard-item:nth-child(2) { animation-delay: 30ms; }
+.clipboard-item:nth-child(3) { animation-delay: 60ms; }
+.clipboard-item:nth-child(4) { animation-delay: 90ms; }
+.clipboard-item:nth-child(5) { animation-delay: 120ms; }
+.clipboard-item:nth-child(n+6) { animation-delay: 150ms; }
 
-.clipboard-item {
-  animation: fadeIn 0.15s ease forwards;
+/* ======== Focus visible for accessibility ======== */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

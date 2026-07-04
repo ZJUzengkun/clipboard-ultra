@@ -15,8 +15,17 @@ function App() {
   const [items, setItems] = createSignal<ClipboardItemData[]>([]);
   const [keyword, setKeyword] = createSignal("");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
+  const [theme, setTheme] = createSignal<"dark" | "light">(
+    window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"
+  );
 
   let refreshInterval: number;
+
+  const toggleTheme = () => {
+    const next = theme() === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.setAttribute("data-theme", next);
+  };
 
   const loadItems = async () => {
     try {
@@ -32,6 +41,9 @@ function App() {
   };
 
   onMount(() => {
+    // 初始化主题
+    document.documentElement.setAttribute("data-theme", theme());
+
     loadItems();
     refreshInterval = window.setInterval(loadItems, 1000);
 
@@ -46,6 +58,16 @@ function App() {
     onCleanup(() => {
       unlisten.then((fn) => fn());
     });
+
+    // 监听系统主题变化
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: light)");
+    const handleThemeChange = (e: MediaQueryListEvent) => {
+      const newTheme = e.matches ? "light" : "dark";
+      setTheme(newTheme);
+      document.documentElement.setAttribute("data-theme", newTheme);
+    };
+    mediaQuery.addEventListener("change", handleThemeChange);
+    onCleanup(() => mediaQuery.removeEventListener("change", handleThemeChange));
   });
 
   onCleanup(() => {
@@ -108,7 +130,21 @@ function App() {
     <div class="app">
       <div class="titlebar" data-tauri-drag-region>
         <span class="titlebar-title">ClipBoard Pro</span>
-        <span class="titlebar-count">{items().length} 条记录</span>
+        <div class="titlebar-right">
+          <span class="titlebar-count">{items().length} 条</span>
+          <button class="btn-theme" onClick={toggleTheme} title="切换主题">
+            {theme() === "dark" ? (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="5" />
+                <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
+            )}
+          </button>
+        </div>
       </div>
       <SearchBar value={keyword()} onInput={handleSearch} />
       <ClipboardList
@@ -123,4 +159,3 @@ function App() {
 }
 
 export default App;
-
