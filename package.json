@@ -1,14 +1,15 @@
 {
   "name": "clipboard-pro",
-  "version": "0.1.0",
-  "description": "",
+  "version": "0.2.0",
+  "description": "A lightweight cross-platform clipboard history manager",
   "type": "module",
   "scripts": {
     "start": "vite",
     "dev": "vite",
     "build": "vite build",
     "serve": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "version": "node scripts/sync-version.js"
   },
   "license": "MIT",
   "dependencies": {
