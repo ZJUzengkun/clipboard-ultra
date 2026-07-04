@@ -14,17 +14,15 @@
       {
         "label": "main",
         "title": "ClipBoard Pro",
-        "width": 400,
-        "height": 500,
-        "resizable": true,
+        "width": 800,
+        "height": 400,
+        "resizable": false,
         "decorations": false,
-        "transparent": false,
+        "transparent": true,
         "alwaysOnTop": true,
         "visible": false,
-        "center": true,
         "skipTaskbar": true,
-        "focus": false,
-        "backgroundColor": "#16161e"
+        "focus": false
       }
     ],
     "security": {
