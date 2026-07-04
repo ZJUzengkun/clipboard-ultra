@@ -16,6 +16,7 @@ impl Database {
         let db_path = app_data_dir.join("clipboard.db");
         let conn = Connection::open(db_path)?;
 
+        // 创建基础表（不含新增列的索引，避免旧数据库兼容问题）
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS clipboard_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,10 +29,6 @@ impl Database {
                 updated_at INTEGER NOT NULL,
                 is_pinned INTEGER DEFAULT 0
             );
-            CREATE INDEX IF NOT EXISTS idx_content_hash ON clipboard_items(content_hash);
-            CREATE INDEX IF NOT EXISTS idx_updated_at ON clipboard_items(updated_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_is_pinned ON clipboard_items(is_pinned);
-            CREATE INDEX IF NOT EXISTS idx_tag ON clipboard_items(tag);
 
             CREATE TABLE IF NOT EXISTS tag_rules (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,8 +45,17 @@ impl Database {
             ",
         )?;
 
-        // 兼容旧数据库：添加 tag 列（如果不存在）
+        // 兼容旧数据库：添加 tag 列（如果不存在）— 必须在创建索引之前
         let _ = conn.execute("ALTER TABLE clipboard_items ADD COLUMN tag TEXT", []);
+
+        // 创建索引（此时 tag 列已确保存在）
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_content_hash ON clipboard_items(content_hash);
+            CREATE INDEX IF NOT EXISTS idx_updated_at ON clipboard_items(updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_is_pinned ON clipboard_items(is_pinned);
+            CREATE INDEX IF NOT EXISTS idx_tag ON clipboard_items(tag);
+            ",
+        )?;
 
         Ok(Self {
             conn: Mutex::new(conn),

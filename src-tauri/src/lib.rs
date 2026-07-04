@@ -18,8 +18,11 @@ pub fn run() {
             let app_data_dir = app
                 .path()
                 .app_data_dir()
-                .expect("Failed to get app data dir");
-            let db = Arc::new(Database::new(app_data_dir.clone()).expect("Failed to init database"));
+                .map_err(|e| e.to_string())?;
+            let db = Arc::new(
+                Database::new(app_data_dir.clone())
+                    .map_err(|e| format!("Failed to init database: {}", e))?
+            );
 
             // 启动剪贴板监听
             let monitor = Arc::new(clipboard::monitor::ClipboardMonitor::new(
