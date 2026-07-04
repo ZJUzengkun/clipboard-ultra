@@ -1,4 +1,4 @@
-import { Component, createSignal, onMount, Show, For } from "solid-js";
+import { Component, createSignal, onMount, onCleanup, Show, For } from "solid-js";
 import { getShortcut, setShortcut, getTagRules, addTagRule, deleteTagRule, TagRule } from "../hooks/useClipboard";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emit } from "@tauri-apps/api/event";
@@ -176,10 +176,25 @@ const SettingsPage: Component = () => {
     getCurrentWindow().close();
   };
 
+  // ESC 关闭窗口
+  const handleGlobalKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Escape" && !recording()) {
+      handleClose();
+    }
+  };
+
+  onMount(() => {
+    document.addEventListener("keydown", handleGlobalKeyDown);
+  });
+
+  onCleanup(() => {
+    document.removeEventListener("keydown", handleGlobalKeyDown);
+  });
+
   return (
     <div class="settings-window">
       <div class="settings-titlebar" data-tauri-drag-region>
-        <div class="settings-titlebar-left">
+        <div class="settings-titlebar-left" data-tauri-drag-region="false">
           <button class="settings-traffic-btn traffic-close" onClick={handleClose} title="关闭">
             <svg viewBox="0 0 6 6"><path d="M0 0L6 6M6 0L0 6" stroke="currentColor" stroke-width="1.2"/></svg>
           </button>

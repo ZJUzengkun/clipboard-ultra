@@ -26,6 +26,7 @@ function App() {
   const [blobsDir, setBlobsDir] = createSignal("");
   const [activeTag, setActiveTag] = createSignal("");
   const [tagRules, setTagRules] = createSignal<TagRule[]>([]);
+  const [pendingDeletes, setPendingDeletes] = createSignal<ClipboardItemData[]>([]);
   const [theme, setTheme] = createSignal<"dark" | "light">(
     window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"
   );
@@ -99,6 +100,7 @@ function App() {
         // 如果窗口刚获得焦点不到 300ms，不要隐藏（防止闪屏）
         const elapsed = Date.now() - showTimestamp;
         if (elapsed > 300) {
+          commitDeletes();
           appWindow.hide();
         }
       }
@@ -147,7 +149,8 @@ function App() {
 
   const handlePaste = async (id: number) => {
     await pasteItem(id);
-    // 粘贴后自动隐藏面板
+    // 粘贴后自动隐藏面板，落库待删项
+    commitDeletes();
     getCurrentWindow().hide();
   };
 
@@ -156,13 +159,48 @@ function App() {
     await loadItems();
   };
 
-  const handleDelete = async (id: number) => {
-    await deleteClipboardItem(id);
-    await loadItems();
+  const handleDelete = (id: number) => {
+    const item = items().find((i) => i.id === id);
+    if (!item) return;
+    // 前端软删除：推入待删队列，从显示列表移除
+    setPendingDeletes((prev) => [...prev, item]);
+    setItems((prev) => prev.filter((i) => i.id !== id));
+    setSelectedIndex((i) => Math.min(i, items().length - 1));
+  };
+
+  const handleUndo = () => {
+    const pending = pendingDeletes();
+    if (pending.length === 0) return;
+    const restored = pending[pending.length - 1];
+    setPendingDeletes((prev) => prev.slice(0, -1));
+    // 按排序规则插回正确位置
+    setItems((prev) =>
+      [...prev, restored].sort((a, b) => {
+        if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
+        return b.updated_at - a.updated_at;
+      })
+    );
+  };
+
+  // 面板隐藏时批量落库删除
+  const commitDeletes = async () => {
+    const pending = pendingDeletes();
+    if (pending.length === 0) return;
+    for (const item of pending) {
+      await deleteClipboardItem(item.id);
+    }
+    setPendingDeletes([]);
   };
 
   // 键盘导航（左右方向键切换卡片）
   const handleKeyDown = (e: KeyboardEvent) => {
+    // Ctrl/Cmd+Z 撤销删除
+    if (e.key === "z" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      handleUndo();
+      return;
+    }
+
     const list = items();
     switch (e.key) {
       case "ArrowRight":
@@ -184,7 +222,15 @@ function App() {
           handlePaste(list[selectedIndex()].id);
         }
         break;
+      case "Backspace":
+      case "Delete":
+        e.preventDefault();
+        if (list[selectedIndex()]) {
+          handleDelete(list[selectedIndex()].id);
+        }
+        break;
       case "Escape":
+        commitDeletes();
         getCurrentWindow().hide();
         break;
     }
