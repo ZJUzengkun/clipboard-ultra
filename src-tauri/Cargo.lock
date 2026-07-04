@@ -506,10 +506,11 @@ dependencies = [
 
 [[package]]
 name = "clipboard-pro"
-version = "0.5.4"
+version = "0.5.5"
 dependencies = [
  "chrono",
  "clipboard-rs",
+ "core-graphics 0.24.0",
  "enigo",
  "image",
  "regex",
@@ -619,6 +620,19 @@ dependencies = [
  "bitflags 1.3.2",
  "core-foundation 0.9.4",
  "core-graphics-types 0.1.3",
+ "foreign-types",
+ "libc",
+]
+
+[[package]]
+name = "core-graphics"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa95a34622365fa5bbf40b20b75dba8dfa8c94c734aea8ac9a5ca38af14316f1"
+dependencies = [
+ "bitflags 2.13.0",
+ "core-foundation 0.10.1",
+ "core-graphics-types 0.2.0",
  "foreign-types",
  "libc",
 ]

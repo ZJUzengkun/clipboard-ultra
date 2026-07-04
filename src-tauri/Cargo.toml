@@ -33,6 +33,9 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 uuid = { version = "1", features = ["v4"] }
 regex = "1"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = "0.24"
+
 [profile.release]
 codegen-units = 16    # 多单元并行 CodeGen，加速编译
 lto = "thin"          # Thin LTO 比 Fat LTO 快很多，优化效果接近

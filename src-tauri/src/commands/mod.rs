@@ -6,6 +6,33 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::{Manager, State, WebviewUrl, WebviewWindowBuilder};
 
+/// macOS: 用 CGEvent 直接发送 Cmd+V（只需 Accessibility 权限）
+#[cfg(target_os = "macos")]
+fn simulate_paste_macos() {
+    use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation};
+    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+
+    let source = match CGEventSource::new(CGEventSourceStateID::HIDSystemState) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+
+    // 'v' key code = 9 on macOS
+    let key_down = match CGEvent::new_keyboard_event(source.clone(), 9, true) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    key_down.set_flags(CGEventFlags::CGEventFlagCommand);
+    key_down.post(CGEventTapLocation::HID);
+
+    let key_up = match CGEvent::new_keyboard_event(source, 9, false) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    key_up.set_flags(CGEventFlags::CGEventFlagCommand);
+    key_up.post(CGEventTapLocation::HID);
+}
+
 /// 应用全局状态，存储数据库引用和 blob 目录
 pub struct AppState {
     pub db: Arc<Database>,
@@ -94,11 +121,9 @@ pub fn paste_item(
     // 模拟粘贴快捷键
     #[cfg(target_os = "macos")]
     {
-        // macOS: osascript 恢复焦点 + enigo 发送 Cmd+V
-        // System Events keystroke 需要 Automation 权限（用户可能未授予），
-        // 而 enigo 走 Accessibility 权限（已确认开启），所以分开处理更可靠
+        // macOS: osascript 恢复焦点 + CGEvent 发送 Cmd+V
+        // CGEvent 只需 Accessibility 权限，不需要主线程、不需要 Automation 权限
         let prev = state.previous_app.lock().unwrap().take();
-        let handle = app_handle.clone();
         std::thread::spawn(move || {
             // 1. 用 osascript 激活前台应用
             if let Some(bundle_id) = prev {
@@ -108,16 +133,10 @@ pub fn paste_item(
                     )])
                     .output();
             }
-            // 2. 等待焦点稳定后用 enigo 发送 Cmd+V
+            // 2. 等待焦点稳定
             std::thread::sleep(std::time::Duration::from_millis(100));
-            let _ = handle.run_on_main_thread(move || {
-                if let Ok(mut enigo) = enigo::Enigo::new(&enigo::Settings::default()) {
-                    use enigo::{Direction, Key, Keyboard};
-                    let _ = enigo.key(Key::Meta, Direction::Press);
-                    let _ = enigo.key(Key::Unicode('v'), Direction::Click);
-                    let _ = enigo.key(Key::Meta, Direction::Release);
-                }
-            });
+            // 3. 用 CGEvent 发送 Cmd+V
+            simulate_paste_macos();
         });
     }
 
