@@ -201,6 +201,13 @@ function App() {
       return;
     }
 
+    // Cmd+, 打开设置（macOS 惯例）
+    if (e.key === "," && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      invoke("open_settings");
+      return;
+    }
+
     const list = items();
     switch (e.key) {
       case "ArrowRight":

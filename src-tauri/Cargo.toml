@@ -1,6 +1,6 @@
 [package]
 name = "clipboard-pro"
-version = "0.5.3"
+version = "0.5.4"
 description = "A lightweight cross-platform clipboard history manager"
 authors = ["ZJUzengkun"]
 license = "MIT"

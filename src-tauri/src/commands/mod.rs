@@ -3,6 +3,7 @@ use clipboard_rs::{common::RustImage, Clipboard, ClipboardContext};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use tauri::{Manager, State, WebviewUrl, WebviewWindowBuilder};
 
 /// 应用全局状态，存储数据库引用和 blob 目录
@@ -11,6 +12,9 @@ pub struct AppState {
     pub blobs_dir: PathBuf,
     /// 粘贴时设置此标志，让 monitor 跳过下一次检测
     pub skip_clipboard_check: Arc<AtomicBool>,
+    /// 记录面板显示前的前台应用 bundle ID（macOS）
+    #[allow(dead_code)]
+    pub previous_app: Mutex<Option<String>>,
 }
 
 /// 获取剪贴板历史列表
@@ -87,12 +91,26 @@ pub fn paste_item(
         let _ = window.hide();
     }
 
+    // macOS: 激活之前的前台应用，恢复焦点
+    #[cfg(target_os = "macos")]
+    {
+        let prev = state.previous_app.lock().unwrap().take();
+        if let Some(bundle_id) = prev {
+            let _ = std::process::Command::new("osascript")
+                .args(["-e", &format!(
+                    "tell application id \"{}\" to activate", bundle_id
+                )])
+                .output();
+        }
+    }
+
     // 模拟粘贴快捷键
     // 注意：macOS 上 enigo 调用 TSMGetInputSourceProperty 必须在主线程执行，
     // 否则切换输入法后会触发 dispatch_assert_queue_fail 导致 SIGTRAP 崩溃。
     let handle = app_handle.clone();
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        // 等待目标应用重新获得焦点
+        std::thread::sleep(std::time::Duration::from_millis(300));
         let _ = handle.run_on_main_thread(move || {
             if let Ok(mut enigo) = enigo::Enigo::new(&enigo::Settings::default()) {
                 use enigo::{Direction, Key, Keyboard};

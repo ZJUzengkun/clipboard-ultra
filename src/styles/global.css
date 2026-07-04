@@ -306,9 +306,9 @@ body {
 }
 
 .clipboard-item.selected {
-  background: var(--bg-elevated);
-  border-color: var(--border-active);
-  box-shadow: var(--shadow-card), 0 0 0 2px var(--accent-soft);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent), var(--shadow-card);
   transform: translateY(-4px);
 }
 

@@ -38,7 +38,7 @@ pub fn run() {
 
             // 注册全局状态
             let blobs_dir = app_data_dir.join("blobs");
-            app.manage(AppState { db, blobs_dir, skip_clipboard_check: skip_flag });
+            app.manage(AppState { db, blobs_dir, skip_clipboard_check: skip_flag, previous_app: std::sync::Mutex::new(None) });
 
             // 注册全局快捷键（使用已保存的或默认的）
             let handle = app.handle().clone();
