@@ -107,6 +107,8 @@ function App() {
 
   const handlePaste = async (id: number) => {
     await pasteItem(id);
+    // 粘贴后自动隐藏面板
+    getCurrentWindow().hide();
   };
 
   const handleTogglePin = async (id: number) => {
@@ -119,17 +121,22 @@ function App() {
     await loadItems();
   };
 
-  // 键盘导航
+  // 键盘导航（左右方向键切换卡片）
   const handleKeyDown = (e: KeyboardEvent) => {
     const list = items();
     switch (e.key) {
+      case "ArrowRight":
       case "ArrowDown":
         e.preventDefault();
         setSelectedIndex((i) => Math.min(i + 1, list.length - 1));
+        // 滚动选中卡片进入视野
+        scrollToSelected();
         break;
+      case "ArrowLeft":
       case "ArrowUp":
         e.preventDefault();
         setSelectedIndex((i) => Math.max(i - 1, 0));
+        scrollToSelected();
         break;
       case "Enter":
         e.preventDefault();
@@ -141,6 +148,15 @@ function App() {
         getCurrentWindow().hide();
         break;
     }
+  };
+
+  const scrollToSelected = () => {
+    requestAnimationFrame(() => {
+      const el = document.querySelector(".clipboard-item.selected");
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+      }
+    });
   };
 
   onMount(() => {

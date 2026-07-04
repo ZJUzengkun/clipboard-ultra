@@ -302,12 +302,14 @@ body {
 .clipboard-item:hover {
   background: var(--bg-hover);
   border-color: var(--border);
+  transform: translateY(-2px);
 }
 
 .clipboard-item.selected {
   background: var(--bg-elevated);
   border-color: var(--border-active);
-  box-shadow: var(--shadow-card), 0 0 0 1px var(--accent-soft);
+  box-shadow: var(--shadow-card), 0 0 0 2px var(--accent-soft);
+  transform: translateY(-4px);
 }
 
 .clipboard-item:active {
