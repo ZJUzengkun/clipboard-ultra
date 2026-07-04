@@ -30,11 +30,40 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_content_hash ON clipboard_items(content_hash);
             CREATE INDEX IF NOT EXISTS idx_updated_at ON clipboard_items(updated_at DESC);
             CREATE INDEX IF NOT EXISTS idx_is_pinned ON clipboard_items(is_pinned);
+
+            CREATE TABLE IF NOT EXISTS app_config (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             ",
         )?;
 
         Ok(Self {
             conn: Mutex::new(conn),
         })
+    }
+
+    /// 获取配置值
+    pub fn get_config(&self, key: &str) -> Result<Option<String>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let result = conn
+            .query_row(
+                "SELECT value FROM app_config WHERE key = ?1",
+                [key],
+                |row| row.get(0),
+            )
+            .ok();
+        Ok(result)
+    }
+
+    /// 设置配置值
+    pub fn set_config(&self, key: &str, value: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT OR REPLACE INTO app_config (key, value) VALUES (?1, ?2)",
+            rusqlite::params![key, value],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
     }
 }

@@ -11,6 +11,7 @@ pub struct ClipboardItem {
     pub content_type: String,
     pub content: String,
     pub content_hash: String,
+    pub blob_path: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
     pub is_pinned: bool,
@@ -54,13 +55,73 @@ impl Database {
         Ok(())
     }
 
+    /// 插入图片记录，存储 blob 路径
+    pub fn insert_image(&self, blob_path: &str, content_hash: &str) -> Result<(), String> {
+        let now = Utc::now().timestamp();
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        // 检查是否已存在相同哈希的图片
+        let existing: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM clipboard_items WHERE content_hash = ?1",
+                [content_hash],
+                |row| row.get(0),
+            )
+            .ok();
+
+        if let Some(id) = existing {
+            // 已存在：更新时间戳
+            conn.execute(
+                "UPDATE clipboard_items SET updated_at = ?1 WHERE id = ?2",
+                rusqlite::params![now, id],
+            )
+            .map_err(|e| e.to_string())?;
+        } else {
+            // 不存在：插入新记录
+            conn.execute(
+                "INSERT INTO clipboard_items (content_type, content, content_hash, blob_path, created_at, updated_at)
+                 VALUES ('image', '[图片]', ?1, ?2, ?3, ?4)",
+                rusqlite::params![content_hash, blob_path, now, now],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+
+        self.cleanup_old_items(&conn)?;
+        Ok(())
+    }
+
+    /// 根据 ID 获取单条记录
+    pub fn get_item_by_id(&self, id: i64) -> Result<Option<ClipboardItem>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let result = conn
+            .query_row(
+                "SELECT id, content_type, content, content_hash, blob_path, created_at, updated_at, is_pinned
+                 FROM clipboard_items WHERE id = ?1",
+                [id],
+                |row| {
+                    Ok(ClipboardItem {
+                        id: row.get(0)?,
+                        content_type: row.get(1)?,
+                        content: row.get(2)?,
+                        content_hash: row.get(3)?,
+                        blob_path: row.get(4)?,
+                        created_at: row.get(5)?,
+                        updated_at: row.get(6)?,
+                        is_pinned: row.get::<_, i32>(7)? == 1,
+                    })
+                },
+            )
+            .ok();
+        Ok(result)
+    }
+
     /// 搜索历史记录（模糊匹配）
     pub fn search(&self, keyword: &str) -> Result<Vec<ClipboardItem>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let query = format!("%{}%", keyword);
         let mut stmt = conn
             .prepare(
-                "SELECT id, content_type, content, content_hash, created_at, updated_at, is_pinned
+                "SELECT id, content_type, content, content_hash, blob_path, created_at, updated_at, is_pinned
                  FROM clipboard_items
                  WHERE content LIKE ?1
                  ORDER BY is_pinned DESC, updated_at DESC
@@ -75,9 +136,10 @@ impl Database {
                     content_type: row.get(1)?,
                     content: row.get(2)?,
                     content_hash: row.get(3)?,
-                    created_at: row.get(4)?,
-                    updated_at: row.get(5)?,
-                    is_pinned: row.get::<_, i32>(6)? == 1,
+                    blob_path: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                    is_pinned: row.get::<_, i32>(7)? == 1,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -92,7 +154,7 @@ impl Database {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, content_type, content, content_hash, created_at, updated_at, is_pinned
+                "SELECT id, content_type, content, content_hash, blob_path, created_at, updated_at, is_pinned
                  FROM clipboard_items
                  ORDER BY is_pinned DESC, updated_at DESC
                  LIMIT ?1",
@@ -106,9 +168,10 @@ impl Database {
                     content_type: row.get(1)?,
                     content: row.get(2)?,
                     content_hash: row.get(3)?,
-                    created_at: row.get(4)?,
-                    updated_at: row.get(5)?,
-                    is_pinned: row.get::<_, i32>(6)? == 1,
+                    blob_path: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                    is_pinned: row.get::<_, i32>(7)? == 1,
                 })
             })
             .map_err(|e| e.to_string())?

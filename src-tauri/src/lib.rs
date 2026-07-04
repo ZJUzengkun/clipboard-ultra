@@ -19,19 +19,30 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .expect("Failed to get app data dir");
-            let db = Arc::new(Database::new(app_data_dir).expect("Failed to init database"));
+            let db = Arc::new(Database::new(app_data_dir.clone()).expect("Failed to init database"));
 
             // 启动剪贴板监听
-            let monitor = Arc::new(clipboard::monitor::ClipboardMonitor::new(db.clone()));
+            let monitor = Arc::new(clipboard::monitor::ClipboardMonitor::new(db.clone(), app_data_dir.clone()));
             monitor.start();
 
-            // 注册全局状态
-            app.manage(AppState { db });
+            // 读取保存的快捷键配置
+            let saved_shortcut = db.get_config("shortcut").ok().flatten();
 
-            // 注册全局快捷键
+            // 注册全局状态
+            let blobs_dir = app_data_dir.join("blobs");
+            app.manage(AppState { db, blobs_dir });
+
+            // 注册全局快捷键（使用已保存的或默认的）
             let handle = app.handle().clone();
             hotkey::register_shortcuts(&handle)
                 .map_err(|e| e.to_string())?;
+            // 如果有保存的快捷键，立刻用它替换默认的
+            if let Some(ref shortcut_str) = saved_shortcut {
+                if shortcut_str != hotkey::DEFAULT_SHORTCUT {
+                    hotkey::re_register_shortcut(&handle, shortcut_str)
+                        .map_err(|e| e.to_string())?;
+                }
+            }
 
             // 创建系统托盘
             tray::create_tray(&handle)
@@ -45,6 +56,9 @@ pub fn run() {
             commands::toggle_pin_item,
             commands::delete_clipboard_item,
             commands::paste_item,
+            commands::get_blobs_dir,
+            commands::get_shortcut,
+            commands::set_shortcut,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

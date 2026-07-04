@@ -4,6 +4,7 @@ import ClipboardItem, { ClipboardItemData } from "./ClipboardItem";
 interface ClipboardListProps {
   items: ClipboardItemData[];
   selectedIndex: number;
+  blobsDir: string;
   onPaste: (id: number) => void;
   onTogglePin: (id: number) => void;
   onDelete: (id: number) => void;
@@ -36,6 +37,7 @@ const ClipboardList: Component<ClipboardListProps> = (props) => {
             <ClipboardItem
               item={item}
               isSelected={index() === props.selectedIndex}
+              blobsDir={props.blobsDir}
               onPaste={props.onPaste}
               onTogglePin={props.onTogglePin}
               onDelete={props.onDelete}

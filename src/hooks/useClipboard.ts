@@ -20,3 +20,15 @@ export async function deleteClipboardItem(id: number): Promise<void> {
 export async function pasteItem(id: number): Promise<void> {
   return invoke("paste_item", { id });
 }
+
+export async function getBlobsDir(): Promise<string> {
+  return invoke("get_blobs_dir");
+}
+
+export async function getShortcut(): Promise<string> {
+  return invoke("get_shortcut");
+}
+
+export async function setShortcut(shortcut: string): Promise<void> {
+  return invoke("set_shortcut", { shortcut });
+}

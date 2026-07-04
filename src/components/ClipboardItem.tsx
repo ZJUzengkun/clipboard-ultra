@@ -1,10 +1,12 @@
 import { Component, Show } from "solid-js";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
 export interface ClipboardItemData {
   id: number;
   content_type: string;
   content: string;
   content_hash: string;
+  blob_path: string | null;
   created_at: number;
   updated_at: number;
   is_pinned: boolean;
@@ -13,6 +15,7 @@ export interface ClipboardItemData {
 interface ClipboardItemProps {
   item: ClipboardItemData;
   isSelected: boolean;
+  blobsDir: string;
   onPaste: (id: number) => void;
   onTogglePin: (id: number) => void;
   onDelete: (id: number) => void;
@@ -43,18 +46,33 @@ const ClipboardItem: Component<ClipboardItemProps> = (props) => {
     return `${text.length} 字符`;
   };
 
+  const isImage = () => props.item.content_type === "image";
+
+  const thumbSrc = () => {
+    if (!isImage() || !props.item.blob_path || !props.blobsDir) return "";
+    const thumbName = props.item.blob_path.replace(".png", "_thumb.png");
+    return convertFileSrc(`${props.blobsDir}/${thumbName}`);
+  };
+
   return (
     <div
       class={`clipboard-item ${props.isSelected ? "selected" : ""} ${props.item.is_pinned ? "pinned" : ""}`}
       onClick={() => props.onPaste(props.item.id)}
     >
       <div class="item-content">
-        <pre>{truncate(props.item.content)}</pre>
+        <Show when={isImage()} fallback={<pre>{truncate(props.item.content)}</pre>}>
+          <div class="item-image">
+            <img src={thumbSrc()} alt="clipboard image" loading="lazy" />
+          </div>
+        </Show>
       </div>
       <div class="item-footer">
         <div class="item-meta">
           <span class="item-time">{formatTime(props.item.updated_at)}</span>
-          <Show when={charCount(props.item.content)}>
+          <Show when={isImage()}>
+            <span class="item-type-badge">图片</span>
+          </Show>
+          <Show when={!isImage() && charCount(props.item.content)}>
             <span class="item-chars">{charCount(props.item.content)}</span>
           </Show>
         </div>

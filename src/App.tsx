@@ -1,6 +1,7 @@
-import { createSignal, onMount, onCleanup } from "solid-js";
+import { createSignal, onMount, onCleanup, Show } from "solid-js";
 import SearchBar from "./components/SearchBar";
 import ClipboardList from "./components/ClipboardList";
+import Settings from "./components/Settings";
 import { ClipboardItemData } from "./components/ClipboardItem";
 import {
   getClipboardItems,
@@ -8,6 +9,7 @@ import {
   togglePinItem,
   deleteClipboardItem,
   pasteItem,
+  getBlobsDir,
 } from "./hooks/useClipboard";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
@@ -15,6 +17,8 @@ function App() {
   const [items, setItems] = createSignal<ClipboardItemData[]>([]);
   const [keyword, setKeyword] = createSignal("");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
+  const [blobsDir, setBlobsDir] = createSignal("");
+  const [showSettings, setShowSettings] = createSignal(false);
   const [theme, setTheme] = createSignal<"dark" | "light">(
     window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"
   );
@@ -43,6 +47,9 @@ function App() {
   onMount(() => {
     // 初始化主题
     document.documentElement.setAttribute("data-theme", theme());
+
+    // 获取 blobs 目录路径
+    getBlobsDir().then(setBlobsDir).catch(console.error);
 
     loadItems();
     refreshInterval = window.setInterval(loadItems, 1000);
@@ -132,6 +139,12 @@ function App() {
         <span class="titlebar-title">ClipBoard Pro</span>
         <div class="titlebar-right">
           <span class="titlebar-count">{items().length} 条</span>
+          <button class="btn-theme" onClick={() => setShowSettings(true)} title="设置">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
           <button class="btn-theme" onClick={toggleTheme} title="切换主题">
             {theme() === "dark" ? (
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -150,10 +163,14 @@ function App() {
       <ClipboardList
         items={items()}
         selectedIndex={selectedIndex()}
+        blobsDir={blobsDir()}
         onPaste={handlePaste}
         onTogglePin={handleTogglePin}
         onDelete={handleDelete}
       />
+      <Show when={showSettings()}>
+        <Settings onClose={() => setShowSettings(false)} />
+      </Show>
     </div>
   );
 }
