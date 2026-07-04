@@ -212,7 +212,6 @@ pub fn open_settings(app_handle: tauri::AppHandle) -> Result<(), String> {
         .focused(true)
         .visible(true)
         .decorations(false)
-        .transparent(true)
         .build()
         .map_err(|e| e.to_string())?;
 
