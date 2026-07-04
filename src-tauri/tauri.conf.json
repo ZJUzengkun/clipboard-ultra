@@ -14,8 +14,8 @@
       {
         "label": "main",
         "title": "ClipBoard Pro",
-        "width": 800,
-        "height": 400,
+        "width": 1920,
+        "height": 360,
         "resizable": false,
         "decorations": false,
         "transparent": true,

@@ -102,11 +102,10 @@ body {
   flex-direction: column;
   height: 100vh;
   background: var(--bg-glass);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
-  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-  border: 1px solid var(--border);
-  border-bottom: none;
+  backdrop-filter: blur(24px) saturate(1.5);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  border-radius: 0;
+  border-top: 1px solid var(--border);
   overflow: hidden;
   animation: slideUp var(--duration-slow) var(--ease-out) forwards;
 }
@@ -114,7 +113,7 @@ body {
 @keyframes slideUp {
   from {
     opacity: 0;
-    transform: translateY(100%);
+    transform: translateY(40px);
   }
   to {
     opacity: 1;

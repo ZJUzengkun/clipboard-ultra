@@ -4,7 +4,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 /// 默认快捷键
 pub const DEFAULT_SHORTCUT: &str = "CommandOrControl+Shift+V";
 
-/// 将窗口定位到屏幕底部居中
+/// 将窗口定位到屏幕底部，宽度铺满屏幕
 fn position_at_bottom(window: &tauri::WebviewWindow) {
     if let Ok(monitor) = window.current_monitor() {
         if let Some(monitor) = monitor {
@@ -12,21 +12,22 @@ fn position_at_bottom(window: &tauri::WebviewWindow) {
             let screen_pos = monitor.position();
             let scale = monitor.scale_factor();
 
-            // 窗口实际像素尺寸
-            if let Ok(win_size) = window.outer_size() {
-                let screen_w = screen_size.width as f64 / scale;
-                let screen_h = screen_size.height as f64 / scale;
-                let win_w = win_size.width as f64 / scale;
-                let win_h = win_size.height as f64 / scale;
-                let offset_x = screen_pos.x as f64 / scale;
-                let offset_y = screen_pos.y as f64 / scale;
+            let screen_w = screen_size.width as f64 / scale;
+            let screen_h = screen_size.height as f64 / scale;
+            let offset_x = screen_pos.x as f64 / scale;
+            let offset_y = screen_pos.y as f64 / scale;
 
-                // 底部居中，留 40px 间距给 Dock/Taskbar
-                let x = offset_x + (screen_w - win_w) / 2.0;
-                let y = offset_y + screen_h - win_h - 40.0;
+            let panel_height = 360.0;
+            let dock_margin = 5.0;
 
-                let _ = window.set_position(tauri::LogicalPosition::new(x, y));
-            }
+            // 设置窗口大小为屏幕宽度 × 面板高度
+            let _ = window.set_size(tauri::LogicalSize::new(screen_w, panel_height));
+
+            // 定位到屏幕最底部（留一点间距给 Dock）
+            let x = offset_x;
+            let y = offset_y + screen_h - panel_height - dock_margin;
+
+            let _ = window.set_position(tauri::LogicalPosition::new(x, y));
         }
     }
 }
