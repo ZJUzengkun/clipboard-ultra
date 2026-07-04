@@ -1,5 +1,6 @@
-import { Component, Show } from "solid-js";
+import { Component, Show, For, createSignal } from "solid-js";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { TagRule } from "../hooks/useClipboard";
 
 export interface ClipboardItemData {
   id: number;
@@ -10,18 +11,29 @@ export interface ClipboardItemData {
   created_at: number;
   updated_at: number;
   is_pinned: boolean;
+  tag: string | null;
 }
 
 interface ClipboardItemProps {
   item: ClipboardItemData;
   isSelected: boolean;
   blobsDir: string;
+  tagRules: TagRule[];
   onPaste: (id: number) => void;
   onTogglePin: (id: number) => void;
   onDelete: (id: number) => void;
+  onSetTag: (id: number, tag: string) => void;
 }
 
 const ClipboardItem: Component<ClipboardItemProps> = (props) => {
+  const [showTagMenu, setShowTagMenu] = createSignal(false);
+
+  const getTagColor = () => {
+    if (!props.item.tag) return "";
+    const rule = props.tagRules.find((r) => r.name === props.item.tag);
+    return rule?.color || "#7c6df0";
+  };
+
   const formatTime = (timestamp: number) => {
     const date = new Date(timestamp * 1000);
     const now = new Date();
@@ -75,8 +87,60 @@ const ClipboardItem: Component<ClipboardItemProps> = (props) => {
           <Show when={!isImage() && charCount(props.item.content)}>
             <span class="item-chars">{charCount(props.item.content)}</span>
           </Show>
+          <Show when={props.item.tag}>
+            <span class="tag-badge" style={{ "--tag-color": getTagColor() }}>
+              <span class="tag-dot" style={{ background: getTagColor() }}></span>
+              {props.item.tag}
+            </span>
+          </Show>
         </div>
         <div class="item-actions">
+          <div class="tag-action-wrapper">
+            <button
+              class="btn-action btn-tag"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowTagMenu(!showTagMenu());
+              }}
+              title="打标签"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+                <line x1="7" y1="7" x2="7.01" y2="7" />
+              </svg>
+            </button>
+            <Show when={showTagMenu()}>
+              <div class="tag-menu">
+                <For each={props.tagRules}>
+                  {(rule) => (
+                    <button
+                      class="tag-menu-item"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        props.onSetTag(props.item.id, rule.name);
+                        setShowTagMenu(false);
+                      }}
+                    >
+                      <span class="tag-dot" style={{ background: rule.color }}></span>
+                      {rule.name}
+                    </button>
+                  )}
+                </For>
+                <Show when={props.item.tag}>
+                  <button
+                    class="tag-menu-item tag-menu-clear"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      props.onSetTag(props.item.id, "");
+                      setShowTagMenu(false);
+                    }}
+                  >
+                    清除标签
+                  </button>
+                </Show>
+              </div>
+            </Show>
+          </div>
           <button
             class={`btn-action btn-pin ${props.item.is_pinned ? "active" : ""}`}
             onClick={(e) => {

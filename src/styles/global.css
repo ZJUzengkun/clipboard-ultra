@@ -594,7 +594,7 @@ body {
   background: var(--bg-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  width: 320px;
+  width: 360px;
   max-height: 80vh;
   overflow-y: auto;
   box-shadow: var(--shadow-elevated);
@@ -805,4 +805,234 @@ body {
   padding: 6px 8px;
   background: rgba(80, 208, 160, 0.1);
   border-radius: var(--radius-xs);
+}
+
+/* ======== Tag Bar ======== */
+.tag-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 8px;
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+
+.tag-bar::-webkit-scrollbar {
+  height: 0;
+}
+
+.tag-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--duration-fast);
+}
+
+.tag-chip:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-active);
+}
+
+.tag-chip.active {
+  background: var(--accent-soft);
+  border-color: var(--border-active);
+  color: var(--accent);
+}
+
+/* ======== Tag Dot ======== */
+.tag-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ======== Tag Badge (on card) ======== */
+.tag-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  padding: 1px 6px;
+  border-radius: 100px;
+  border: 1px solid var(--border);
+}
+
+/* ======== Tag Action Wrapper ======== */
+.tag-action-wrapper {
+  position: relative;
+}
+
+.btn-tag:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* ======== Tag Menu (dropdown) ======== */
+.tag-menu {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 4px;
+  min-width: 100px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-elevated);
+  z-index: 50;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: panelSlideIn var(--duration-fast) var(--ease-out);
+}
+
+.tag-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--duration-fast);
+}
+
+.tag-menu-item:hover {
+  background: var(--bg-hover);
+}
+
+.tag-menu-clear {
+  color: var(--accent-danger);
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+  padding-top: 8px;
+}
+
+/* ======== Settings: Tag Rules ======== */
+.tag-rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tag-rule-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.tag-rule-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.tag-rule-pattern {
+  flex: 1;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-rule-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.tag-rule-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color var(--duration-fast);
+}
+
+.tag-rule-input:focus {
+  border-color: var(--border-active);
+}
+
+.tag-color-picker {
+  display: flex;
+  gap: 6px;
+}
+
+.color-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+
+.color-swatch:hover {
+  transform: scale(1.2);
+}
+
+.color-swatch.active {
+  border-color: var(--text-primary);
+  box-shadow: 0 0 0 2px var(--bg-primary);
+}
+
+.tag-presets {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.tag-preset-label {
+  font-size: 10px;
+  color: var(--text-hint);
+}
+
+.tag-preset-btn {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+
+.tag-preset-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--border-active);
 }

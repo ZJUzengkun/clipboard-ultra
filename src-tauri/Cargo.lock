@@ -506,12 +506,13 @@ dependencies = [
 
 [[package]]
 name = "clipboard-pro"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "chrono",
  "clipboard-rs",
  "enigo",
  "image",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

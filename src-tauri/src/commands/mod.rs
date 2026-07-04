@@ -1,4 +1,4 @@
-use crate::db::{operations::ClipboardItem, Database};
+use crate::db::{operations::{ClipboardItem, TagRule}, Database};
 use clipboard_rs::{common::RustImage, Clipboard, ClipboardContext};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -133,4 +133,51 @@ pub fn set_shortcut(
     // 注册成功后保存到数据库
     state.db.set_config("shortcut", &shortcut)?;
     Ok(())
+}
+
+// ========== 标签规则命令 ==========
+
+/// 获取所有标签规则
+#[tauri::command]
+pub fn get_tag_rules(state: State<AppState>) -> Result<Vec<TagRule>, String> {
+    state.db.get_tag_rules()
+}
+
+/// 添加标签规则
+#[tauri::command]
+pub fn add_tag_rule(
+    state: State<AppState>,
+    name: String,
+    pattern: String,
+    color: String,
+    priority: i64,
+) -> Result<TagRule, String> {
+    state.db.add_tag_rule(&name, &pattern, &color, priority)
+}
+
+/// 删除标签规则
+#[tauri::command]
+pub fn delete_tag_rule(state: State<AppState>, id: i64) -> Result<(), String> {
+    state.db.delete_tag_rule(id)
+}
+
+/// 按标签筛选条目
+#[tauri::command]
+pub fn get_items_by_tag(
+    state: State<AppState>,
+    tag: String,
+    limit: Option<u32>,
+) -> Result<Vec<ClipboardItem>, String> {
+    state.db.get_by_tag(&tag, limit.unwrap_or(50))
+}
+
+/// 手动给条目打标签
+#[tauri::command]
+pub fn set_item_tag(
+    state: State<AppState>,
+    id: i64,
+    tag: String,
+) -> Result<(), String> {
+    let tag_opt = if tag.is_empty() { None } else { Some(tag.as_str()) };
+    state.db.set_item_tag(id, tag_opt)
 }

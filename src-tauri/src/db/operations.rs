@@ -1,5 +1,6 @@
 use crate::db::Database;
 use chrono::Utc;
+use regex::Regex;
 use rusqlite;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -12,9 +13,20 @@ pub struct ClipboardItem {
     pub content: String,
     pub content_hash: String,
     pub blob_path: Option<String>,
+    pub tag: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
     pub is_pinned: bool,
+}
+
+/// 标签规则数据结构
+#[derive(Debug, Serialize, Clone)]
+pub struct TagRule {
+    pub id: i64,
+    pub name: String,
+    pub pattern: String,
+    pub color: String,
+    pub priority: i64,
 }
 
 impl Database {
@@ -41,11 +53,14 @@ impl Database {
             )
             .map_err(|e| e.to_string())?;
         } else {
+            // 自动匹配标签
+            let tag = Self::match_tag_with_conn(&conn, content);
+
             // 不存在：插入新记录
             conn.execute(
-                "INSERT INTO clipboard_items (content_type, content, content_hash, created_at, updated_at)
-                 VALUES ('text', ?1, ?2, ?3, ?4)",
-                rusqlite::params![content, hash, now, now],
+                "INSERT INTO clipboard_items (content_type, content, content_hash, tag, created_at, updated_at)
+                 VALUES ('text', ?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![content, hash, tag, now, now],
             )
             .map_err(|e| e.to_string())?;
         }
@@ -95,7 +110,7 @@ impl Database {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let result = conn
             .query_row(
-                "SELECT id, content_type, content, content_hash, blob_path, created_at, updated_at, is_pinned
+                "SELECT id, content_type, content, content_hash, blob_path, tag, created_at, updated_at, is_pinned
                  FROM clipboard_items WHERE id = ?1",
                 [id],
                 |row| {
@@ -105,9 +120,10 @@ impl Database {
                         content: row.get(2)?,
                         content_hash: row.get(3)?,
                         blob_path: row.get(4)?,
-                        created_at: row.get(5)?,
-                        updated_at: row.get(6)?,
-                        is_pinned: row.get::<_, i32>(7)? == 1,
+                        tag: row.get(5)?,
+                        created_at: row.get(6)?,
+                        updated_at: row.get(7)?,
+                        is_pinned: row.get::<_, i32>(8)? == 1,
                     })
                 },
             )
@@ -121,7 +137,7 @@ impl Database {
         let query = format!("%{}%", keyword);
         let mut stmt = conn
             .prepare(
-                "SELECT id, content_type, content, content_hash, blob_path, created_at, updated_at, is_pinned
+                "SELECT id, content_type, content, content_hash, blob_path, tag, created_at, updated_at, is_pinned
                  FROM clipboard_items
                  WHERE content LIKE ?1
                  ORDER BY is_pinned DESC, updated_at DESC
@@ -137,9 +153,10 @@ impl Database {
                     content: row.get(2)?,
                     content_hash: row.get(3)?,
                     blob_path: row.get(4)?,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
-                    is_pinned: row.get::<_, i32>(7)? == 1,
+                    tag: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                    is_pinned: row.get::<_, i32>(8)? == 1,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -154,7 +171,7 @@ impl Database {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, content_type, content, content_hash, blob_path, created_at, updated_at, is_pinned
+                "SELECT id, content_type, content, content_hash, blob_path, tag, created_at, updated_at, is_pinned
                  FROM clipboard_items
                  ORDER BY is_pinned DESC, updated_at DESC
                  LIMIT ?1",
@@ -169,9 +186,10 @@ impl Database {
                     content: row.get(2)?,
                     content_hash: row.get(3)?,
                     blob_path: row.get(4)?,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
-                    is_pinned: row.get::<_, i32>(7)? == 1,
+                    tag: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                    is_pinned: row.get::<_, i32>(8)? == 1,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -230,5 +248,128 @@ impl Database {
             .map_err(|e| e.to_string())?;
         }
         Ok(())
+    }
+
+    // ========== 标签规则相关方法 ==========
+
+    /// 内部方法：用已锁定的连接匹配标签
+    fn match_tag_with_conn(conn: &rusqlite::Connection, content: &str) -> Option<String> {
+        let mut stmt = conn
+            .prepare("SELECT name, pattern FROM tag_rules ORDER BY priority DESC")
+            .ok()?;
+
+        let rules: Vec<(String, String)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .ok()?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        for (name, pattern) in rules {
+            if let Ok(re) = Regex::new(&pattern) {
+                if re.is_match(content) {
+                    return Some(name);
+                }
+            }
+        }
+        None
+    }
+
+    /// 获取所有标签规则（按优先级降序）
+    pub fn get_tag_rules(&self) -> Result<Vec<TagRule>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT id, name, pattern, color, priority FROM tag_rules ORDER BY priority DESC")
+            .map_err(|e| e.to_string())?;
+
+        let rules = stmt
+            .query_map([], |row| {
+                Ok(TagRule {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    pattern: row.get(2)?,
+                    color: row.get(3)?,
+                    priority: row.get(4)?,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(rules)
+    }
+
+    /// 新增标签规则
+    pub fn add_tag_rule(&self, name: &str, pattern: &str, color: &str, priority: i64) -> Result<TagRule, String> {
+        // 验证正则合法性
+        Regex::new(pattern).map_err(|e| format!("Invalid regex: {}", e))?;
+
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT INTO tag_rules (name, pattern, color, priority) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![name, pattern, color, priority],
+        )
+        .map_err(|e| e.to_string())?;
+
+        let id = conn.last_insert_rowid();
+        Ok(TagRule {
+            id,
+            name: name.to_string(),
+            pattern: pattern.to_string(),
+            color: color.to_string(),
+            priority,
+        })
+    }
+
+    /// 删除标签规则
+    pub fn delete_tag_rule(&self, id: i64) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM tag_rules WHERE id = ?1", [id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// 手动设置/清除条目的标签
+    pub fn set_item_tag(&self, id: i64, tag: Option<&str>) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE clipboard_items SET tag = ?1 WHERE id = ?2",
+            rusqlite::params![tag, id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// 按标签筛选条目
+    pub fn get_by_tag(&self, tag: &str, limit: u32) -> Result<Vec<ClipboardItem>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, content_type, content, content_hash, blob_path, tag, created_at, updated_at, is_pinned
+                 FROM clipboard_items
+                 WHERE tag = ?1
+                 ORDER BY is_pinned DESC, updated_at DESC
+                 LIMIT ?2",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let items = stmt
+            .query_map(rusqlite::params![tag, limit], |row| {
+                Ok(ClipboardItem {
+                    id: row.get(0)?,
+                    content_type: row.get(1)?,
+                    content: row.get(2)?,
+                    content_hash: row.get(3)?,
+                    blob_path: row.get(4)?,
+                    tag: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                    is_pinned: row.get::<_, i32>(8)? == 1,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(items)
     }
 }

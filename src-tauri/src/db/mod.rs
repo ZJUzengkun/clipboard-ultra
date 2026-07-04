@@ -23,6 +23,7 @@ impl Database {
                 content TEXT NOT NULL,
                 content_hash TEXT NOT NULL,
                 blob_path TEXT,
+                tag TEXT,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
                 is_pinned INTEGER DEFAULT 0
@@ -30,6 +31,15 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_content_hash ON clipboard_items(content_hash);
             CREATE INDEX IF NOT EXISTS idx_updated_at ON clipboard_items(updated_at DESC);
             CREATE INDEX IF NOT EXISTS idx_is_pinned ON clipboard_items(is_pinned);
+            CREATE INDEX IF NOT EXISTS idx_tag ON clipboard_items(tag);
+
+            CREATE TABLE IF NOT EXISTS tag_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                pattern TEXT NOT NULL,
+                color TEXT NOT NULL DEFAULT '#7c6df0',
+                priority INTEGER NOT NULL DEFAULT 0
+            );
 
             CREATE TABLE IF NOT EXISTS app_config (
                 key TEXT PRIMARY KEY,
@@ -37,6 +47,9 @@ impl Database {
             );
             ",
         )?;
+
+        // 兼容旧数据库：添加 tag 列（如果不存在）
+        let _ = conn.execute("ALTER TABLE clipboard_items ADD COLUMN tag TEXT", []);
 
         Ok(Self {
             conn: Mutex::new(conn),

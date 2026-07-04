@@ -1,6 +1,7 @@
 import { createSignal, onMount, onCleanup, Show } from "solid-js";
 import SearchBar from "./components/SearchBar";
 import ClipboardList from "./components/ClipboardList";
+import TagBar from "./components/TagBar";
 import Settings from "./components/Settings";
 import { ClipboardItemData } from "./components/ClipboardItem";
 import {
@@ -10,6 +11,10 @@ import {
   deleteClipboardItem,
   pasteItem,
   getBlobsDir,
+  getTagRules,
+  getItemsByTag,
+  setItemTag,
+  TagRule,
 } from "./hooks/useClipboard";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
@@ -20,6 +25,8 @@ function App() {
   const [selectedIndex, setSelectedIndex] = createSignal(0);
   const [blobsDir, setBlobsDir] = createSignal("");
   const [showSettings, setShowSettings] = createSignal(false);
+  const [activeTag, setActiveTag] = createSignal("");
+  const [tagRules, setTagRules] = createSignal<TagRule[]>([]);
   const [theme, setTheme] = createSignal<"dark" | "light">(
     window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"
   );
@@ -35,13 +42,27 @@ function App() {
   const loadItems = async () => {
     try {
       const k = keyword();
-      const result =
-        k.length > 0
-          ? await searchClipboard(k)
-          : await getClipboardItems(50);
+      const tag = activeTag();
+      let result: ClipboardItemData[];
+      if (k.length > 0) {
+        result = await searchClipboard(k);
+      } else if (tag) {
+        result = await getItemsByTag(tag, 50);
+      } else {
+        result = await getClipboardItems(50);
+      }
       setItems(result);
     } catch (e) {
       console.error("Failed to load items:", e);
+    }
+  };
+
+  const loadTagRules = async () => {
+    try {
+      const rules = await getTagRules();
+      setTagRules(rules);
+    } catch (e) {
+      console.error("Failed to load tag rules:", e);
     }
   };
 
@@ -53,6 +74,7 @@ function App() {
     getBlobsDir().then(setBlobsDir).catch(console.error);
 
     loadItems();
+    loadTagRules();
 
     // 监听后端剪贴板更新事件（替代轮询）
     const unlistenClipboard = listen("clipboard-updated", () => {
@@ -102,7 +124,20 @@ function App() {
   const handleSearch = (value: string) => {
     setKeyword(value);
     setSelectedIndex(0);
+    if (value.length > 0) setActiveTag("");
     loadItems();
+  };
+
+  const handleSelectTag = (tag: string) => {
+    setActiveTag(tag);
+    setKeyword("");
+    setSelectedIndex(0);
+    loadItems();
+  };
+
+  const handleSetTag = async (id: number, tag: string) => {
+    await setItemTag(id, tag);
+    await loadItems();
   };
 
   const handlePaste = async (id: number) => {
@@ -194,16 +229,21 @@ function App() {
         </div>
       </div>
       <SearchBar value={keyword()} onInput={handleSearch} />
+      <Show when={tagRules().length > 0}>
+        <TagBar rules={tagRules()} activeTag={activeTag()} onSelectTag={handleSelectTag} />
+      </Show>
       <ClipboardList
         items={items()}
         selectedIndex={selectedIndex()}
         blobsDir={blobsDir()}
+        tagRules={tagRules()}
         onPaste={handlePaste}
         onTogglePin={handleTogglePin}
         onDelete={handleDelete}
+        onSetTag={handleSetTag}
       />
       <Show when={showSettings()}>
-        <Settings onClose={() => setShowSettings(false)} />
+        <Settings onClose={() => setShowSettings(false)} onTagRulesChanged={loadTagRules} />
       </Show>
     </div>
   );

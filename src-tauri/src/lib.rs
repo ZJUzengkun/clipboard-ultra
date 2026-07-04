@@ -63,6 +63,11 @@ pub fn run() {
             commands::get_blobs_dir,
             commands::get_shortcut,
             commands::set_shortcut,
+            commands::get_tag_rules,
+            commands::add_tag_rule,
+            commands::delete_tag_rule,
+            commands::get_items_by_tag,
+            commands::set_item_tag,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

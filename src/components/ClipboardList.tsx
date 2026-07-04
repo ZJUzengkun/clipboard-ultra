@@ -1,13 +1,16 @@
 import { Component, For, Show } from "solid-js";
 import ClipboardItem, { ClipboardItemData } from "./ClipboardItem";
+import { TagRule } from "../hooks/useClipboard";
 
 interface ClipboardListProps {
   items: ClipboardItemData[];
   selectedIndex: number;
   blobsDir: string;
+  tagRules: TagRule[];
   onPaste: (id: number) => void;
   onTogglePin: (id: number) => void;
   onDelete: (id: number) => void;
+  onSetTag: (id: number, tag: string) => void;
 }
 
 const ClipboardList: Component<ClipboardListProps> = (props) => {
@@ -38,9 +41,11 @@ const ClipboardList: Component<ClipboardListProps> = (props) => {
               item={item}
               isSelected={index() === props.selectedIndex}
               blobsDir={props.blobsDir}
+              tagRules={props.tagRules}
               onPaste={props.onPaste}
               onTogglePin={props.onTogglePin}
               onDelete={props.onDelete}
+              onSetTag={props.onSetTag}
             />
           )}
         </For>
