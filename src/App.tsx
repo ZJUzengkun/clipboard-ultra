@@ -2,7 +2,6 @@ import { createSignal, onMount, onCleanup, Show } from "solid-js";
 import SearchBar from "./components/SearchBar";
 import ClipboardList from "./components/ClipboardList";
 import TagBar from "./components/TagBar";
-import Settings from "./components/Settings";
 import { ClipboardItemData } from "./components/ClipboardItem";
 import {
   getClipboardItems,
@@ -18,13 +17,13 @@ import {
 } from "./hooks/useClipboard";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 
 function App() {
   const [items, setItems] = createSignal<ClipboardItemData[]>([]);
   const [keyword, setKeyword] = createSignal("");
   const [selectedIndex, setSelectedIndex] = createSignal(0);
   const [blobsDir, setBlobsDir] = createSignal("");
-  const [showSettings, setShowSettings] = createSignal(false);
   const [activeTag, setActiveTag] = createSignal("");
   const [tagRules, setTagRules] = createSignal<TagRule[]>([]);
   const [theme, setTheme] = createSignal<"dark" | "light">(
@@ -81,6 +80,11 @@ function App() {
       loadItems();
     });
 
+    // 监听设置窗口发来的标签规则变更事件
+    const unlistenTagRules = listen("tag-rules-changed", () => {
+      loadTagRules();
+    });
+
     // 窗口获得焦点时也刷新一次，确保数据最新
     const appWindow = getCurrentWindow();
     let showTimestamp = 0;
@@ -104,6 +108,7 @@ function App() {
       unlisten.then((fn) => fn());
       unlistenShow.then((fn) => fn());
       unlistenClipboard.then((fn) => fn());
+      unlistenTagRules.then((fn) => fn());
     });
 
     // 监听系统主题变化
@@ -208,7 +213,7 @@ function App() {
         <span class="titlebar-title">ClipBoard Pro</span>
         <div class="titlebar-right">
           <span class="titlebar-count">{items().length} 条</span>
-          <button class="btn-theme" onClick={() => setShowSettings(true)} title="设置">
+          <button class="btn-theme" onClick={() => invoke("open_settings")} title="设置">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
@@ -242,9 +247,6 @@ function App() {
         onDelete={handleDelete}
         onSetTag={handleSetTag}
       />
-      <Show when={showSettings()}>
-        <Settings onClose={() => setShowSettings(false)} onTagRulesChanged={loadTagRules} />
-      </Show>
     </div>
   );
 }

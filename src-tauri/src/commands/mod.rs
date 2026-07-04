@@ -3,7 +3,7 @@ use clipboard_rs::{common::RustImage, Clipboard, ClipboardContext};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{Manager, State};
+use tauri::{Manager, State, WebviewUrl, WebviewWindowBuilder};
 
 /// 应用全局状态，存储数据库引用和 blob 目录
 pub struct AppState {
@@ -190,4 +190,31 @@ pub fn set_item_tag(
 ) -> Result<(), String> {
     let tag_opt = if tag.is_empty() { None } else { Some(tag.as_str()) };
     state.db.set_item_tag(id, tag_opt)
+}
+
+/// 打开独立的设置窗口
+#[tauri::command]
+pub fn open_settings(app_handle: tauri::AppHandle) -> Result<(), String> {
+    // 如果设置窗口已经存在，直接聚焦
+    if let Some(window) = app_handle.get_webview_window("settings") {
+        let _ = window.set_focus();
+        return Ok(());
+    }
+
+    // 创建新的设置窗口
+    let url = WebviewUrl::App("settings.html".into());
+    WebviewWindowBuilder::new(&app_handle, "settings", url)
+        .title("偏好设置")
+        .inner_size(580.0, 520.0)
+        .min_inner_size(480.0, 400.0)
+        .resizable(true)
+        .center()
+        .focused(true)
+        .visible(true)
+        .decorations(false)
+        .transparent(true)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
 }
