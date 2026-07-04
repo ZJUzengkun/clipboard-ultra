@@ -1,0 +1,351 @@
+/* ========================================
+   ClipBoard Pro — 温暖暗夜工具风
+   ======================================== */
+
+:root {
+  /* 色彩系统 */
+  --bg-primary: #1a1b26;
+  --bg-secondary: #24253a;
+  --bg-elevated: #2a2b3d;
+  --bg-hover: #32334a;
+
+  --text-primary: #e0dff4;
+  --text-secondary: #9896b0;
+  --text-muted: #6b6982;
+
+  --accent-amber: #e8a838;
+  --accent-amber-dim: rgba(232, 168, 56, 0.15);
+  --accent-teal: #5ec4b6;
+  --accent-teal-dim: rgba(94, 196, 182, 0.12);
+  --accent-rose: #e06c75;
+  --accent-rose-dim: rgba(224, 108, 117, 0.12);
+
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-focus: rgba(94, 196, 182, 0.4);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+
+  --transition-fast: 120ms ease;
+  --transition-normal: 200ms ease;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ======== App Layout ======== */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg-primary);
+}
+
+/* ======== Titlebar ======== */
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px 6px;
+  cursor: grab;
+}
+
+.titlebar:active {
+  cursor: grabbing;
+}
+
+.titlebar-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.titlebar-count {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ======== Search Bar ======== */
+.search-bar {
+  position: relative;
+  padding: 4px 12px 12px;
+}
+
+.search-bar input {
+  width: 100%;
+  padding: 9px 12px 9px 36px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color var(--transition-normal), background var(--transition-normal), box-shadow var(--transition-normal);
+}
+
+.search-bar input:focus {
+  border-color: var(--border-focus);
+  background: var(--bg-elevated);
+  box-shadow: 0 0 0 3px var(--accent-teal-dim);
+}
+
+.search-bar input::placeholder {
+  color: var(--text-muted);
+}
+
+.search-icon {
+  position: absolute;
+  left: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  color: var(--text-muted);
+  pointer-events: none;
+  margin-top: -4px;
+}
+
+.clear-btn {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: var(--bg-hover);
+  border-radius: 50%;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 3px;
+  margin-top: -4px;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.clear-btn:hover {
+  color: var(--text-primary);
+  background: var(--accent-rose-dim);
+}
+
+.clear-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* ======== Clipboard List ======== */
+.clipboard-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* ======== Clipboard Item ======== */
+.clipboard-item {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+  position: relative;
+}
+
+.clipboard-item:hover {
+  background: var(--bg-hover);
+}
+
+.clipboard-item.selected {
+  background: var(--bg-elevated);
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-sm);
+}
+
+.clipboard-item.pinned {
+  border-left: 3px solid var(--accent-amber);
+  padding-left: 10px;
+}
+
+.clipboard-item.pinned::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent-amber-dim);
+  pointer-events: none;
+  opacity: 0.4;
+}
+
+/* ======== Item Content ======== */
+.item-content {
+  margin-bottom: 6px;
+}
+
+.item-content pre {
+  font-family: "SF Mono", "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 54px;
+  overflow: hidden;
+  margin: 0;
+  background: none;
+}
+
+/* ======== Item Footer ======== */
+.item-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.item-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.item-time {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.item-chars {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* ======== Item Actions ======== */
+.item-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.clipboard-item:hover .item-actions,
+.clipboard-item.selected .item-actions {
+  opacity: 1;
+}
+
+.btn-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 5px;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.btn-action svg {
+  width: 14px;
+  height: 14px;
+}
+
+.btn-pin:hover,
+.btn-pin.active {
+  color: var(--accent-amber);
+  background: var(--accent-amber-dim);
+}
+
+.btn-delete:hover {
+  color: var(--accent-rose);
+  background: var(--accent-rose-dim);
+}
+
+/* ======== Empty State ======== */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: var(--text-muted);
+  gap: 8px;
+}
+
+.empty-state svg {
+  width: 40px;
+  height: 40px;
+  opacity: 0.4;
+  margin-bottom: 4px;
+}
+
+.empty-state p {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.empty-state span {
+  font-size: 12px;
+}
+
+/* ======== Scrollbar ======== */
+.clipboard-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.clipboard-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.clipboard-list::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 3px;
+}
+
+.clipboard-list::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* ======== Animations ======== */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.clipboard-item {
+  animation: fadeIn 0.15s ease forwards;
+}
