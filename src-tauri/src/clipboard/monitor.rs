@@ -4,6 +4,7 @@ use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
 use crate::db::Database;
@@ -12,18 +13,25 @@ use crate::db::Database;
 pub struct ClipboardMonitor {
     db: Arc<Database>,
     blobs_dir: PathBuf,
+    app_handle: AppHandle,
     last_hash: std::sync::Mutex<String>,
 }
 
 impl ClipboardMonitor {
-    pub fn new(db: Arc<Database>, app_data_dir: PathBuf) -> Self {
+    pub fn new(db: Arc<Database>, app_data_dir: PathBuf, app_handle: AppHandle) -> Self {
         let blobs_dir = app_data_dir.join("blobs");
         std::fs::create_dir_all(&blobs_dir).ok();
         Self {
             db,
             blobs_dir,
+            app_handle,
             last_hash: std::sync::Mutex::new(String::new()),
         }
+    }
+
+    /// 通知前端剪贴板内容已更新
+    fn notify_update(&self) {
+        let _ = self.app_handle.emit("clipboard-updated", ());
     }
 
     /// 启动后台轮询线程，每 500ms 检测一次剪贴板变化
@@ -60,8 +68,9 @@ impl ClipboardMonitor {
         if *last != hash {
             *last = hash;
             drop(last);
-            if let Err(e) = self.db.insert_text(&text) {
-                eprintln!("Failed to insert clipboard text: {}", e);
+            match self.db.insert_text(&text) {
+                Ok(_) => self.notify_update(),
+                Err(e) => eprintln!("Failed to insert clipboard text: {}", e),
             }
         }
     }
@@ -111,8 +120,9 @@ impl ClipboardMonitor {
 
         // 存储到数据库，blob_path 保存相对路径（文件名）
         let blob_relative = format!("{}.png", file_id);
-        if let Err(e) = self.db.insert_image(&blob_relative, &hash) {
-            eprintln!("Failed to insert clipboard image: {}", e);
+        match self.db.insert_image(&blob_relative, &hash) {
+            Ok(_) => self.notify_update(),
+            Err(e) => eprintln!("Failed to insert clipboard image: {}", e),
         }
     }
 }

@@ -22,7 +22,11 @@ pub fn run() {
             let db = Arc::new(Database::new(app_data_dir.clone()).expect("Failed to init database"));
 
             // 启动剪贴板监听
-            let monitor = Arc::new(clipboard::monitor::ClipboardMonitor::new(db.clone(), app_data_dir.clone()));
+            let monitor = Arc::new(clipboard::monitor::ClipboardMonitor::new(
+                db.clone(),
+                app_data_dir.clone(),
+                app.handle().clone(),
+            ));
             monitor.start();
 
             // 读取保存的快捷键配置

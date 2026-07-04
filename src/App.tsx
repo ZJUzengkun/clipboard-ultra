@@ -12,6 +12,7 @@ import {
   getBlobsDir,
 } from "./hooks/useClipboard";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 
 function App() {
   const [items, setItems] = createSignal<ClipboardItemData[]>([]);
@@ -52,15 +53,19 @@ function App() {
     getBlobsDir().then(setBlobsDir).catch(console.error);
 
     loadItems();
-    refreshInterval = window.setInterval(loadItems, 1000);
 
-    // 窗口失焦时自动隐藏（带 debounce 防止 show 后立即触发 blur）
+    // 监听后端剪贴板更新事件（替代轮询）
+    const unlistenClipboard = listen("clipboard-updated", () => {
+      loadItems();
+    });
+
+    // 窗口获得焦点时也刷新一次，确保数据最新
     const appWindow = getCurrentWindow();
     let showTimestamp = 0;
 
-    // 监听窗口显示事件，记录时间戳
     const unlistenShow = appWindow.listen("tauri://focus", () => {
       showTimestamp = Date.now();
+      loadItems();
     });
 
     const unlisten = appWindow.onFocusChanged(({ payload: focused }) => {
@@ -76,6 +81,7 @@ function App() {
     onCleanup(() => {
       unlisten.then((fn) => fn());
       unlistenShow.then((fn) => fn());
+      unlistenClipboard.then((fn) => fn());
     });
 
     // 监听系统主题变化
