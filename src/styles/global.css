@@ -86,7 +86,7 @@
 
 body {
   font-family: "Geist", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  background: #1e1e2e;
+  background: transparent;
   color: var(--text-primary);
   overflow: hidden;
   user-select: none;
@@ -101,8 +101,9 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: var(--bg-primary);
-  backdrop-filter: none;
+  background: var(--bg-glass);
+  backdrop-filter: blur(24px) saturate(1.5);
+  -webkit-backdrop-filter: blur(24px) saturate(1.5);
   border-radius: 0;
   border-top: 1px solid var(--border);
   overflow: hidden;
@@ -114,6 +115,22 @@ body {
 .app.ready {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* Windows 平台覆盖：实色背景（WebView2 不支持窗口透明 + backdrop-filter） */
+.platform-windows body {
+  background: #1e1e2e;
+}
+.platform-windows .app {
+  background: var(--bg-primary);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+[data-theme="light"].platform-windows body {
+  background: #f5f5f7;
+}
+[data-theme="light"].platform-windows .app {
+  background: var(--bg-primary);
 }
 
 /* ======== Titlebar ======== */
