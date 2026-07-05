@@ -346,6 +346,7 @@ pub fn open_settings(app_handle: tauri::AppHandle) -> Result<(), String> {
             println!("{}", msg);
             if let Some(ref mut f) = log_file {
                 let _ = writeln!(f, "[{}] {}", chrono::Local::now().format("%H:%M:%S"), msg);
+                let _ = f.flush();  // 强制刷新
             }
         };
     }
@@ -359,9 +360,27 @@ pub fn open_settings(app_handle: tauri::AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    // 创建新的设置窗口
-    let url = WebviewUrl::App("/settings.html".into());
-    log!("[open_settings] Creating settings window with url: {:?}", url);
+    // 尝试多种 URL 格式，记录每一步
+    // 先尝试用 data URL 测试 WebView2 是否能渲染任何内容
+    #[cfg(target_os = "windows")]
+    let url = {
+        // Windows: 用 External URL 加载 tauri 协议的 settings.html
+        let test_url = "https://tauri.localhost/settings.html".parse::<url::Url>();
+        match test_url {
+            Ok(u) => {
+                log!("[open_settings] Using External URL: {}", u);
+                WebviewUrl::External(u)
+            }
+            Err(e) => {
+                log!("[open_settings] URL parse error: {}, falling back to App path", e);
+                WebviewUrl::App("settings.html".into())
+            }
+        }
+    };
+    #[cfg(not(target_os = "windows"))]
+    let url = WebviewUrl::App("settings.html".into());
+
+    log!("[open_settings] Final URL: {:?}", url);
     let use_decorations = cfg!(target_os = "windows");
     log!("[open_settings] use_decorations: {}", use_decorations);
 
