@@ -131,7 +131,9 @@ const ClipboardItem: Component<ClipboardItemProps> = (props) => {
   const thumbSrc = () => {
     if (!isImage() || !props.item.blob_path || !props.blobsDir) return "";
     const thumbName = props.item.blob_path.replace(".png", "_thumb.png");
-    return convertFileSrc(`${props.blobsDir}/${thumbName}`);
+    // Windows 路径用反斜杠，需统一为正斜杠后再传给 convertFileSrc
+    const fullPath = `${props.blobsDir}/${thumbName}`.replace(/\\/g, "/");
+    return convertFileSrc(fullPath);
   };
 
   return (

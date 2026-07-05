@@ -41,7 +41,7 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": ["**"]
+        "scope": ["**", "$APPDATA/**", "$HOME/**", "C:/**", "D:/**"]
       }
     }
   },
