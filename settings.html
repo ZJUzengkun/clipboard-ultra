@@ -6,8 +6,34 @@
     <title>偏好设置 - Clipboard Ultra</title>
   </head>
 
-  <body>
+  <body style="background: #16161e; color: #eae9fc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;">
     <div id="root"></div>
+    <div id="debug-errors" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:#1e1e2e; color:#f06070; padding:24px; font-size:13px; overflow:auto; white-space:pre-wrap; z-index:99999;"></div>
+    <script>
+      // 捕获所有JS错误并显示在页面上（调试用）
+      window.onerror = function(msg, url, line, col, err) {
+        var el = document.getElementById('debug-errors');
+        el.style.display = 'block';
+        el.textContent += '[ERROR] ' + msg + '\n  at ' + url + ':' + line + ':' + col + '\n';
+        if (err && err.stack) el.textContent += err.stack + '\n\n';
+      };
+      window.addEventListener('unhandledrejection', function(e) {
+        var el = document.getElementById('debug-errors');
+        el.style.display = 'block';
+        el.textContent += '[PROMISE REJECTED] ' + (e.reason ? (e.reason.stack || e.reason.message || e.reason) : 'unknown') + '\n\n';
+      });
+      // 3秒后如果root仍为空，显示提示
+      setTimeout(function() {
+        var root = document.getElementById('root');
+        if (!root || root.children.length === 0) {
+          var el = document.getElementById('debug-errors');
+          el.style.display = 'block';
+          el.textContent += '[WARN] 3秒后 #root 仍为空，JS模块可能未加载。\n';
+          el.textContent += 'UserAgent: ' + navigator.userAgent + '\n';
+          el.textContent += 'Location: ' + window.location.href + '\n';
+        }
+      }, 3000);
+    </script>
     <script src="/src/settings.tsx" type="module"></script>
   </body>
 </html>
