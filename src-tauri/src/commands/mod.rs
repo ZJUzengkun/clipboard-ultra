@@ -4,13 +4,28 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::sync::RwLock;
 use tauri::{Manager, State, WebviewUrl, WebviewWindowBuilder};
+use serde::Serialize;
 
 /// macOS: 用 CGEvent 直接发送 Cmd+V（只需 Accessibility 权限）
 #[cfg(target_os = "macos")]
 fn simulate_paste_macos() {
     use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation};
     use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
+
+    // 检查辅助功能权限
+    extern "C" {
+        fn AXIsProcessTrusted() -> bool;
+    }
+    let trusted = unsafe { AXIsProcessTrusted() };
+    if !trusted {
+        // Accessibility 未授权，fallback 到 System Events 按键
+        let _ = std::process::Command::new("osascript")
+            .args(["-e", "tell application \"System Events\" to keystroke \"v\" using command down"])
+            .output();
+        return;
+    }
 
     let source = match CGEventSource::new(CGEventSourceStateID::HIDSystemState) {
         Ok(s) => s,
@@ -42,6 +57,11 @@ pub struct AppState {
     /// 记录面板显示前的前台应用 bundle ID（macOS）
     #[allow(dead_code)]
     pub previous_app: Mutex<Option<String>>,
+    /// 记录面板显示前的前台窗口句柄（Windows）
+    #[allow(dead_code)]
+    pub previous_window_hwnd: Mutex<usize>,
+    /// 排除应用列表（与 ClipboardMonitor 共享）
+    pub excluded_apps: Arc<RwLock<Vec<String>>>,
 }
 
 /// 获取剪贴板历史列表
@@ -125,27 +145,40 @@ pub fn paste_item(
         // CGEvent 只需 Accessibility 权限，不需要主线程、不需要 Automation 权限
         let prev = state.previous_app.lock().unwrap().take();
         std::thread::spawn(move || {
-            // 1. 用 osascript 激活前台应用
             if let Some(bundle_id) = prev {
+                // 用 osascript 激活前台应用（同步，返回时焦点已切换）
                 let _ = std::process::Command::new("osascript")
                     .args(["-e", &format!(
                         "tell application id \"{}\" to activate", bundle_id
                     )])
                     .output();
+                std::thread::sleep(std::time::Duration::from_millis(30));
+            } else {
+                std::thread::sleep(std::time::Duration::from_millis(50));
             }
-            // 2. 等待焦点稳定
-            std::thread::sleep(std::time::Duration::from_millis(100));
-            // 3. 用 CGEvent 发送 Cmd+V
             simulate_paste_macos();
         });
     }
 
     #[cfg(not(target_os = "macos"))]
     {
-        // Windows/Linux: 用 enigo 模拟 Ctrl+V
+        // Windows/Linux: 恢复焦点 + enigo 模拟 Ctrl+V
+        #[cfg(target_os = "windows")]
+        let prev_hwnd = {
+            *state.previous_window_hwnd.lock().unwrap()
+        };
         let handle = app_handle.clone();
         std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            // Windows: 先恢复焦点到之前的窗口
+            #[cfg(target_os = "windows")]
+            {
+                crate::clipboard::restore_foreground_window(prev_hwnd);
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
             let _ = handle.run_on_main_thread(move || {
                 if let Ok(mut enigo) = enigo::Enigo::new(&enigo::Settings::default()) {
                     use enigo::{Direction, Key, Keyboard};
@@ -206,8 +239,61 @@ pub fn add_tag_rule(
     pattern: String,
     color: String,
     priority: i64,
+    expire_days: Option<i64>,
 ) -> Result<TagRule, String> {
-    state.db.add_tag_rule(&name, &pattern, &color, priority)
+    state.db.add_tag_rule(&name, &pattern, &color, priority, expire_days.unwrap_or(0))
+}
+
+/// 更新标签规则的过期天数
+#[tauri::command]
+pub fn update_tag_rule_expire(
+    state: State<AppState>,
+    id: i64,
+    expire_days: i64,
+) -> Result<(), String> {
+    state.db.update_tag_rule_expire(id, expire_days)
+}
+
+/// 获取全局默认过期天数
+#[tauri::command]
+pub fn get_default_expire_days(state: State<AppState>) -> Result<i64, String> {
+    let val = state.db.get_config("default_expire_days")?
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    Ok(val)
+}
+
+/// 设置全局默认过期天数
+#[tauri::command]
+pub fn set_default_expire_days(
+    state: State<AppState>,
+    days: i64,
+) -> Result<(), String> {
+    state.db.set_config("default_expire_days", &days.to_string())
+}
+
+/// 获取指定内容类型的过期天数
+#[tauri::command]
+pub fn get_content_type_expire_days(
+    state: State<AppState>,
+    content_type: String,
+) -> Result<i64, String> {
+    let key = format!("expire_days_{}", content_type);
+    let val = state.db.get_config(&key)?
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    Ok(val)
+}
+
+/// 设置指定内容类型的过期天数
+#[tauri::command]
+pub fn set_content_type_expire_days(
+    state: State<AppState>,
+    content_type: String,
+    days: i64,
+) -> Result<(), String> {
+    let key = format!("expire_days_{}", content_type);
+    state.db.set_config(&key, &days.to_string())
 }
 
 /// 删除标签规则
@@ -250,7 +336,7 @@ pub fn open_settings(app_handle: tauri::AppHandle) -> Result<(), String> {
     let url = WebviewUrl::App("settings.html".into());
     WebviewWindowBuilder::new(&app_handle, "settings", url)
         .title("偏好设置")
-        .inner_size(580.0, 520.0)
+        .inner_size(580.0, 620.0)
         .min_inner_size(480.0, 400.0)
         .resizable(true)
         .center()
@@ -261,4 +347,246 @@ pub fn open_settings(app_handle: tauri::AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+// ========== 排除应用命令 ==========
+
+/// 运行中的应用信息
+#[derive(Debug, Serialize, Clone)]
+pub struct RunningApp {
+    pub bundle_id: String,
+    pub name: String,
+}
+
+/// 获取排除应用列表
+#[tauri::command]
+pub fn get_excluded_apps(state: State<AppState>) -> Result<Vec<String>, String> {
+    let list = state.excluded_apps.read().map_err(|e| e.to_string())?;
+    Ok(list.clone())
+}
+
+/// 添加排除应用
+#[tauri::command]
+pub fn add_excluded_app(
+    state: State<AppState>,
+    bundle_id: String,
+    app_name: String,
+) -> Result<(), String> {
+    // 更新内存中的列表
+    {
+        let mut list = state.excluded_apps.write().map_err(|e| e.to_string())?;
+        if !list.contains(&bundle_id) {
+            list.push(bundle_id.clone());
+        }
+    }
+    // 持久化到数据库
+    let list = state.excluded_apps.read().map_err(|e| e.to_string())?;
+    let json = serde_json::to_string(&*list).map_err(|e| e.to_string())?;
+    state.db.set_config("excluded_apps", &json)?;
+    // 同时保存应用名称映射（用于前端展示）
+    let names_json = state.db.get_config("excluded_apps_names")?
+        .unwrap_or_else(|| "{}".to_string());
+    let mut names: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&names_json).unwrap_or_default();
+    names.insert(bundle_id, serde_json::Value::String(app_name));
+    let names_str = serde_json::to_string(&names).map_err(|e| e.to_string())?;
+    state.db.set_config("excluded_apps_names", &names_str)?;
+    Ok(())
+}
+
+/// 移除排除应用
+#[tauri::command]
+pub fn remove_excluded_app(
+    state: State<AppState>,
+    bundle_id: String,
+) -> Result<(), String> {
+    {
+        let mut list = state.excluded_apps.write().map_err(|e| e.to_string())?;
+        list.retain(|id| id != &bundle_id);
+    }
+    let list = state.excluded_apps.read().map_err(|e| e.to_string())?;
+    let json = serde_json::to_string(&*list).map_err(|e| e.to_string())?;
+    state.db.set_config("excluded_apps", &json)?;
+    // 也从名称映射中移除
+    let names_json = state.db.get_config("excluded_apps_names")?
+        .unwrap_or_else(|| "{}".to_string());
+    let mut names: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&names_json).unwrap_or_default();
+    names.remove(&bundle_id);
+    let names_str = serde_json::to_string(&names).map_err(|e| e.to_string())?;
+    state.db.set_config("excluded_apps_names", &names_str)?;
+    Ok(())
+}
+
+/// 获取当前正在运行的 GUI 应用列表（macOS）
+/// 仅返回 Foreground 类型的用户应用，排除系统守护进程、WebKit 子进程和自身
+#[tauri::command]
+pub fn get_running_apps() -> Result<Vec<RunningApp>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("lsappinfo")
+            .args(["list"])
+            .output()
+            .map_err(|e| e.to_string())?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        let mut apps: Vec<RunningApp> = Vec::new();
+        let mut current_name: Option<String> = None;
+        let mut current_bundle: Option<String> = None;
+        let mut current_is_foreground = false;
+
+        for line in text.lines() {
+            let trimmed = line.trim();
+            // 新应用条目: 以数字开头，包含应用名
+            if trimmed.starts_with(|c: char| c.is_ascii_digit()) && trimmed.contains('"') {
+                // 保存上一个（仅 Foreground 类型）
+                if current_is_foreground {
+                    if let (Some(name), Some(bundle)) = (current_name.take(), current_bundle.take()) {
+                        if !bundle.is_empty() && !name.is_empty() {
+                            apps.push(RunningApp { bundle_id: bundle, name });
+                        }
+                    }
+                }
+                current_name = None;
+                current_bundle = None;
+                current_is_foreground = false;
+                // 提取名称: 形如 0) "Finder" ASN:...
+                if let Some(start) = trimmed.find('"') {
+                    if let Some(end) = trimmed[start+1..].find('"') {
+                        current_name = Some(trimmed[start+1..start+1+end].to_string());
+                    }
+                }
+            }
+            // 检测应用类型：仅保留 Foreground 类型
+            if trimmed.contains("type=\"Foreground\"") {
+                current_is_foreground = true;
+            }
+            // 解析 bundle ID
+            if trimmed.starts_with("\"CFBundleIdentifier\"=") || trimmed.starts_with("bundleID=") {
+                if let Some(val) = trimmed.split('"').nth(3).or_else(|| trimmed.split('=').last()) {
+                    let clean = val.trim_matches('"').to_string();
+                    if !clean.is_empty() && clean != "[ NULL ]" {
+                        current_bundle = Some(clean);
+                    }
+                }
+            }
+        }
+        // 最后一个
+        if current_is_foreground {
+            if let (Some(name), Some(bundle)) = (current_name, current_bundle) {
+                if !bundle.is_empty() && !name.is_empty() {
+                    apps.push(RunningApp { bundle_id: bundle, name });
+                }
+            }
+        }
+
+        // 过滤掉自身应用
+        apps.retain(|app| {
+            !app.bundle_id.contains("clipboard-ultra")
+                && !app.bundle_id.contains("clipboard-pro")
+        });
+
+        // 去重并排序
+        apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        apps.dedup_by(|a, b| a.bundle_id == b.bundle_id);
+        Ok(apps)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        #[cfg(target_os = "windows")]
+        {
+            use windows_sys::Win32::UI::WindowsAndMessaging::{
+                EnumWindows, GetWindowTextW, GetWindowTextLengthW, IsWindowVisible,
+            };
+            use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+            use windows_sys::Win32::System::ProcessStatus::GetModuleFileNameExW;
+            use windows_sys::Win32::Foundation::CloseHandle;
+
+            let mut apps: Vec<RunningApp> = Vec::new();
+
+            unsafe extern "system" fn enum_callback(
+                hwnd: windows_sys::Win32::Foundation::HWND,
+                lparam: isize,
+            ) -> windows_sys::Win32::Foundation::BOOL {
+                use windows_sys::Win32::UI::WindowsAndMessaging::{
+                    GetWindowTextW, GetWindowTextLengthW, IsWindowVisible,
+                    GetWindowThreadProcessId,
+                };
+                use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+                use windows_sys::Win32::System::ProcessStatus::GetModuleFileNameExW;
+                use windows_sys::Win32::Foundation::CloseHandle;
+
+                if IsWindowVisible(hwnd) == 0 {
+                    return 1; // 继续枚举
+                }
+                let title_len = GetWindowTextLengthW(hwnd);
+                if title_len == 0 {
+                    return 1;
+                }
+                // 获取窗口标题
+                let mut title_buf = vec![0u16; (title_len + 1) as usize];
+                GetWindowTextW(hwnd, title_buf.as_mut_ptr(), title_buf.len() as i32);
+                let title = String::from_utf16_lossy(&title_buf[..title_len as usize]);
+
+                // 获取进程 exe
+                let mut pid: u32 = 0;
+                GetWindowThreadProcessId(hwnd, &mut pid);
+                if pid == 0 {
+                    return 1;
+                }
+                let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+                if process.is_null() {
+                    return 1;
+                }
+                let mut buf = [0u16; 260];
+                let len = GetModuleFileNameExW(process, std::ptr::null_mut(), buf.as_mut_ptr(), 260);
+                CloseHandle(process);
+                if len == 0 {
+                    return 1;
+                }
+                let path = String::from_utf16_lossy(&buf[..len as usize]);
+                let exe_name = path.rsplit('\\').next()
+                    .or_else(|| path.rsplit('/').next())
+                    .unwrap_or(&path)
+                    .to_lowercase();
+
+                let apps_vec = &mut *(lparam as *mut Vec<(String, String)>);
+                apps_vec.push((exe_name, title));
+                1 // 继续枚举
+            }
+
+            let mut raw_apps: Vec<(String, String)> = Vec::new();
+            unsafe {
+                EnumWindows(Some(enum_callback), &mut raw_apps as *mut _ as isize);
+            }
+
+            // 去重：同一 exe 只保留一个
+            let mut seen = std::collections::HashSet::new();
+            for (exe, title) in raw_apps {
+                if exe.contains("clipboard-ultra") || exe.contains("clipboard-pro") {
+                    continue;
+                }
+                if seen.insert(exe.clone()) {
+                    apps.push(RunningApp {
+                        bundle_id: exe.clone(),
+                        name: title,
+                    });
+                }
+            }
+            apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+            Ok(apps)
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            Ok(Vec::new())
+        }
+    }
+}
+
+/// 获取排除应用的名称映射
+#[tauri::command]
+pub fn get_excluded_apps_names(state: State<AppState>) -> Result<std::collections::HashMap<String, String>, String> {
+    let names_json = state.db.get_config("excluded_apps_names")?
+        .unwrap_or_else(|| "{}".to_string());
+    let names: std::collections::HashMap<String, String> = serde_json::from_str(&names_json).unwrap_or_default();
+    Ok(names)
 }

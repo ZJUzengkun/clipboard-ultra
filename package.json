@@ -1,6 +1,6 @@
 {
-  "name": "clipboard-pro",
-  "version": "0.5.5",
+  "name": "clipboard-ultra",
+  "version": "0.6.0",
   "description": "A lightweight cross-platform clipboard history manager",
   "type": "module",
   "scripts": {
@@ -9,6 +9,7 @@
     "build": "vite build",
     "serve": "vite preview",
     "tauri": "tauri",
+    "build:sign": "tauri build && codesign --force --deep --sign 'Clipboard Ultra Dev' src-tauri/target/release/bundle/macos/clipboard-ultra.app",
     "version": "node scripts/sync-version.js"
   },
   "license": "MIT",

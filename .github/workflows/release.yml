@@ -95,6 +95,8 @@ jobs:
         include:
           - platform: macos-latest
             args: '--target aarch64-apple-darwin'
+          - platform: windows-latest
+            args: ''
 
     runs-on: ${{ matrix.platform }}
 
@@ -121,10 +123,24 @@ jobs:
         with:
           workspaces: src-tauri
           cache-on-failure: true
-          shared-key: release-macos-aarch64
+          shared-key: release-${{ matrix.platform }}
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Import code signing certificate
+        if: matrix.platform == 'macos-latest'
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+        run: |
+          echo $CERTIFICATE_BASE64 | base64 --decode > /tmp/cert.p12
+          security create-keychain -p actions build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p actions build.keychain
+          security import /tmp/cert.p12 -k build.keychain -P $CERTIFICATE_PASSWORD -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k actions build.keychain
+          security add-trusted-cert -d -r trustRoot -p codeSign -k build.keychain /tmp/cert.pem 2>/dev/null || true
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -138,6 +154,11 @@ jobs:
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
+
+      - name: Sign app bundle
+        if: matrix.platform == 'macos-latest' && steps.tauri-build.outcome == 'success'
+        run: |
+          codesign --force --deep --sign "Clipboard Ultra Dev" src-tauri/target/aarch64-apple-darwin/release/bundle/macos/clipboard-ultra.app || true
 
       - name: Build Tauri app (fallback without sccache)
         if: steps.tauri-build.outcome == 'failure'

@@ -1,5 +1,5 @@
 import { Component, createSignal, onMount, onCleanup, Show, For } from "solid-js";
-import { getShortcut, setShortcut, getTagRules, addTagRule, deleteTagRule, TagRule } from "../hooks/useClipboard";
+import { getShortcut, setShortcut, getTagRules, addTagRule, deleteTagRule, updateTagRuleExpire, getDefaultExpireDays, setDefaultExpireDays, getContentTypeExpireDays, setContentTypeExpireDays, TagRule, getExcludedApps, getExcludedAppsNames, addExcludedApp, removeExcludedApp, getRunningApps, RunningApp } from "../hooks/useClipboard";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emit } from "@tauri-apps/api/event";
 
@@ -20,6 +20,29 @@ const SettingsPage: Component = () => {
 
   const presetColors = ["#7c6df0", "#f06070", "#f0a050", "#50d0a0", "#5090f0", "#d060d0"];
 
+  // 排除应用状态
+  const [excludedApps, setExcludedApps] = createSignal<string[]>([]);
+  const [excludedNames, setExcludedNames] = createSignal<Record<string, string>>({});
+  const [showAppPicker, setShowAppPicker] = createSignal(false);
+  const [runningApps, setRunningApps] = createSignal<RunningApp[]>([]);
+  const [loadingApps, setLoadingApps] = createSignal(false);
+
+  // 过期策略状态
+  const [defaultExpire, setDefaultExpire] = createSignal(0);
+  const [imageExpire, setImageExpire] = createSignal(0);
+  const [textExpire, setTextExpire] = createSignal(0);
+  const [newRuleExpire, setNewRuleExpire] = createSignal(0);
+
+  const expireOptions = [
+    { value: 0, label: "永不过期" },
+    { value: 1, label: "1 天" },
+    { value: 3, label: "3 天" },
+    { value: 7, label: "7 天" },
+    { value: 14, label: "14 天" },
+    { value: 30, label: "30 天" },
+    { value: 90, label: "90 天" },
+  ];
+
   onMount(async () => {
     // 初始化主题跟随系统
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -36,6 +59,28 @@ const SettingsPage: Component = () => {
       setRules(tagRules);
     } catch (e) {
       console.error("Failed to load tag rules:", e);
+    }
+    try {
+      const apps = await getExcludedApps();
+      setExcludedApps(apps);
+      const names = await getExcludedAppsNames();
+      setExcludedNames(names);
+    } catch (e) {
+      console.error("Failed to load excluded apps:", e);
+    }
+    try {
+      const days = await getDefaultExpireDays();
+      setDefaultExpire(days);
+    } catch (e) {
+      console.error("Failed to load default expire days:", e);
+    }
+    try {
+      const imgDays = await getContentTypeExpireDays("image");
+      setImageExpire(imgDays);
+      const txtDays = await getContentTypeExpireDays("text");
+      setTextExpire(txtDays);
+    } catch (e) {
+      console.error("Failed to load content type expire days:", e);
     }
   });
 
@@ -59,12 +104,13 @@ const SettingsPage: Component = () => {
     }
     setRuleError("");
     try {
-      await addTagRule(name, pattern, newRuleColor(), rules().length);
+      await addTagRule(name, pattern, newRuleColor(), rules().length, newRuleExpire());
       const updated = await getTagRules();
       setRules(updated);
       setNewRuleName("");
       setNewRulePattern("");
       setNewRuleColor("#7c6df0");
+      setNewRuleExpire(0);
       notifyMainWindow();
     } catch (e: any) {
       setRuleError(`添加失败: ${e}`);
@@ -85,6 +131,44 @@ const SettingsPage: Component = () => {
   const addPreset = (name: string, pattern: string) => {
     setNewRuleName(name);
     setNewRulePattern(pattern);
+  };
+
+  // 排除应用操作
+  const handleShowAppPicker = async () => {
+    setShowAppPicker(true);
+    setLoadingApps(true);
+    try {
+      const apps = await getRunningApps();
+      // 过滤已排除的
+      setRunningApps(apps.filter(a => !excludedApps().includes(a.bundle_id)));
+    } catch (e) {
+      console.error("Failed to load running apps:", e);
+    } finally {
+      setLoadingApps(false);
+    }
+  };
+
+  const handleAddExcludedApp = async (app: RunningApp) => {
+    try {
+      await addExcludedApp(app.bundle_id, app.name);
+      setExcludedApps([...excludedApps(), app.bundle_id]);
+      setExcludedNames({ ...excludedNames(), [app.bundle_id]: app.name });
+      setRunningApps(runningApps().filter(a => a.bundle_id !== app.bundle_id));
+    } catch (e) {
+      console.error("Failed to add excluded app:", e);
+    }
+  };
+
+  const handleRemoveExcludedApp = async (bundleId: string) => {
+    try {
+      await removeExcludedApp(bundleId);
+      setExcludedApps(excludedApps().filter(id => id !== bundleId));
+      const names = { ...excludedNames() };
+      delete names[bundleId];
+      setExcludedNames(names);
+    } catch (e) {
+      console.error("Failed to remove excluded app:", e);
+    }
   };
 
   const keyEventToShortcut = (e: KeyboardEvent): string => {
@@ -293,6 +377,20 @@ const SettingsPage: Component = () => {
                       <span class="tag-rule-name">{rule.name}</span>
                       <code class="tag-rule-pattern">{rule.pattern}</code>
                     </div>
+                    <select
+                      class="expire-select"
+                      value={rule.expire_days}
+                      onChange={async (e) => {
+                        const days = parseInt(e.currentTarget.value);
+                        await updateTagRuleExpire(rule.id, days);
+                        const updated = await getTagRules();
+                        setRules(updated);
+                      }}
+                    >
+                      <For each={expireOptions}>
+                        {(opt) => <option value={opt.value}>{opt.label}</option>}
+                      </For>
+                    </select>
                     <button class="btn-rule-delete" onClick={() => handleDeleteRule(rule.id)} title="删除规则">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
@@ -341,6 +439,11 @@ const SettingsPage: Component = () => {
                   )}
                 </For>
               </div>
+              <select class="expire-select" value={newRuleExpire()} onChange={(e) => setNewRuleExpire(parseInt(e.currentTarget.value))}>
+                <For each={expireOptions}>
+                  {(opt) => <option value={opt.value}>{opt.label}</option>}
+                </For>
+              </select>
               <button class="btn-add-rule" onClick={handleAddRule}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px">
                   <path d="M12 5v14M5 12h14" />
@@ -369,6 +472,157 @@ const SettingsPage: Component = () => {
           <Show when={ruleError()}>
             <p class="settings-error">{ruleError()}</p>
           </Show>
+        </section>
+
+        {/* 排除应用区域 */}
+        <section class="settings-section">
+          <div class="section-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="section-icon">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            <span>隐私</span>
+            <span class="section-badge">{excludedApps().length} 个</span>
+          </div>
+
+          <p class="excluded-apps-desc">来自以下应用的复制内容将不会被记录</p>
+
+          <Show when={excludedApps().length > 0}>
+            <div class="excluded-apps-list">
+              <For each={excludedApps()}>
+                {(bundleId) => (
+                  <div class="excluded-app-row">
+                    <div class="excluded-app-info">
+                      <span class="excluded-app-name">{excludedNames()[bundleId] || bundleId}</span>
+                      <span class="excluded-app-bundle">{bundleId}</span>
+                    </div>
+                    <button class="btn-rule-delete" onClick={() => handleRemoveExcludedApp(bundleId)} title="移除">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+
+          <Show when={excludedApps().length === 0 && !showAppPicker()}>
+            <div class="tag-rules-empty">
+              <span>暂无排除应用，建议添加密码管理器等敏感应用</span>
+            </div>
+          </Show>
+
+          <div class="excluded-apps-actions">
+            <button class="btn-add-rule" onClick={handleShowAppPicker}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              添加应用
+            </button>
+          </div>
+
+          <Show when={showAppPicker()}>
+            <div class="app-picker-panel">
+              <div class="app-picker-header">
+                <span>选择要排除的应用</span>
+                <button class="btn-close-sm" onClick={() => setShowAppPicker(false)}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <Show when={loadingApps()}>
+                <div class="app-picker-loading">加载中...</div>
+              </Show>
+              <Show when={!loadingApps()}>
+                <div class="app-picker-list">
+                  <For each={runningApps()}>
+                    {(app) => (
+                      <div class="app-picker-item" onClick={() => handleAddExcludedApp(app)}>
+                        <span class="app-picker-name">{app.name}</span>
+                        <span class="app-picker-bundle">{app.bundle_id}</span>
+                      </div>
+                    )}
+                  </For>
+                  <Show when={runningApps().length === 0}>
+                    <div class="app-picker-empty">没有可添加的运行中应用</div>
+                  </Show>
+                </div>
+              </Show>
+            </div>
+          </Show>
+        </section>
+
+        {/* 数据管理区域 */}
+        <section class="settings-section">
+          <div class="section-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="section-icon">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+            <span>数据管理</span>
+          </div>
+
+          <div class="data-management-card">
+            <div class="data-mgmt-row">
+              <div class="data-mgmt-info">
+                <span class="data-mgmt-label">图片保留时间</span>
+                <span class="data-mgmt-desc">无标签图片的自动清理时间</span>
+              </div>
+              <select
+                class="expire-select"
+                value={imageExpire()}
+                onChange={async (e) => {
+                  const days = parseInt(e.currentTarget.value);
+                  await setContentTypeExpireDays("image", days);
+                  setImageExpire(days);
+                }}
+              >
+                <For each={expireOptions}>
+                  {(opt) => <option value={opt.value}>{opt.label}</option>}
+                </For>
+              </select>
+            </div>
+            <div class="data-mgmt-row">
+              <div class="data-mgmt-info">
+                <span class="data-mgmt-label">文字保留时间</span>
+                <span class="data-mgmt-desc">无标签文字的自动清理时间</span>
+              </div>
+              <select
+                class="expire-select"
+                value={textExpire()}
+                onChange={async (e) => {
+                  const days = parseInt(e.currentTarget.value);
+                  await setContentTypeExpireDays("text", days);
+                  setTextExpire(days);
+                }}
+              >
+                <For each={expireOptions}>
+                  {(opt) => <option value={opt.value}>{opt.label}</option>}
+                </For>
+              </select>
+            </div>
+            <div class="data-mgmt-row">
+              <div class="data-mgmt-info">
+                <span class="data-mgmt-label">其他类型保留时间</span>
+                <span class="data-mgmt-desc">未单独配置的内容类型兑底策略</span>
+              </div>
+              <select
+                class="expire-select"
+                value={defaultExpire()}
+                onChange={async (e) => {
+                  const days = parseInt(e.currentTarget.value);
+                  await setDefaultExpireDays(days);
+                  setDefaultExpire(days);
+                }}
+              >
+                <For each={expireOptions}>
+                  {(opt) => <option value={opt.value}>{opt.label}</option>}
+                </For>
+              </select>
+            </div>
+            <p class="data-mgmt-note">置顶条目永不过期，有标签的条目按标签规则配置过期</p>
+          </div>
         </section>
       </div>
     </div>

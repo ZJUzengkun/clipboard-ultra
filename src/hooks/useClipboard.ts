@@ -7,6 +7,14 @@ export interface TagRule {
   pattern: string;
   color: string;
   priority: number;
+  expire_days: number;
+}
+
+export interface FilterTag {
+  name: string;       // 显示名称，如"图片"、"代码"
+  type: "content_type" | "rule";  // 标签来源
+  value: string;      // 筛选值：content_type 时为 "image"；rule 时为 tag name
+  color: string;      // 标签颜色
 }
 
 export async function getClipboardItems(limit?: number): Promise<ClipboardItemData[]> {
@@ -47,12 +55,32 @@ export async function getTagRules(): Promise<TagRule[]> {
   return invoke("get_tag_rules");
 }
 
-export async function addTagRule(name: string, pattern: string, color: string, priority: number): Promise<TagRule> {
-  return invoke("add_tag_rule", { name, pattern, color, priority });
+export async function addTagRule(name: string, pattern: string, color: string, priority: number, expire_days: number = 0): Promise<TagRule> {
+  return invoke("add_tag_rule", { name, pattern, color, priority, expireDays: expire_days });
 }
 
 export async function deleteTagRule(id: number): Promise<void> {
   return invoke("delete_tag_rule", { id });
+}
+
+export async function updateTagRuleExpire(id: number, expireDays: number): Promise<void> {
+  return invoke("update_tag_rule_expire", { id, expireDays });
+}
+
+export async function getDefaultExpireDays(): Promise<number> {
+  return invoke("get_default_expire_days");
+}
+
+export async function setDefaultExpireDays(days: number): Promise<void> {
+  return invoke("set_default_expire_days", { days });
+}
+
+export async function getContentTypeExpireDays(contentType: string): Promise<number> {
+  return invoke("get_content_type_expire_days", { contentType });
+}
+
+export async function setContentTypeExpireDays(contentType: string, days: number): Promise<void> {
+  return invoke("set_content_type_expire_days", { contentType, days });
 }
 
 export async function getItemsByTag(tag: string, limit?: number): Promise<ClipboardItemData[]> {
@@ -61,4 +89,31 @@ export async function getItemsByTag(tag: string, limit?: number): Promise<Clipbo
 
 export async function setItemTag(id: number, tag: string): Promise<void> {
   return invoke("set_item_tag", { id, tag });
+}
+
+// ========== 排除应用 API ==========
+
+export interface RunningApp {
+  bundle_id: string;
+  name: string;
+}
+
+export async function getExcludedApps(): Promise<string[]> {
+  return invoke("get_excluded_apps");
+}
+
+export async function addExcludedApp(bundleId: string, appName: string): Promise<void> {
+  return invoke("add_excluded_app", { bundleId, appName });
+}
+
+export async function removeExcludedApp(bundleId: string): Promise<void> {
+  return invoke("remove_excluded_app", { bundleId });
+}
+
+export async function getRunningApps(): Promise<RunningApp[]> {
+  return invoke("get_running_apps");
+}
+
+export async function getExcludedAppsNames(): Promise<Record<string, string>> {
+  return invoke("get_excluded_apps_names");
 }

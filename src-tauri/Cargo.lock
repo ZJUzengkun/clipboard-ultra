@@ -505,11 +505,27 @@ dependencies = [
 ]
 
 [[package]]
-name = "clipboard-pro"
-version = "0.5.5"
+name = "clipboard-rs"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "afede46921767868c5c7f8f55202bdd8bec0bab6bc9605174200f45924f93c62"
+dependencies = [
+ "clipboard-win",
+ "image",
+ "objc2 0.6.4",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "windows 0.59.0",
+ "x11rb",
+]
+
+[[package]]
+name = "clipboard-ultra"
+version = "0.6.0"
 dependencies = [
  "chrono",
  "clipboard-rs",
+ "core-foundation 0.10.1",
  "core-graphics 0.24.0",
  "enigo",
  "image",
@@ -523,21 +539,7 @@ dependencies = [
  "tauri-plugin-global-shortcut",
  "tauri-plugin-opener",
  "uuid",
-]
-
-[[package]]
-name = "clipboard-rs"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "afede46921767868c5c7f8f55202bdd8bec0bab6bc9605174200f45924f93c62"
-dependencies = [
- "clipboard-win",
- "image",
- "objc2 0.6.4",
- "objc2-app-kit",
- "objc2-foundation",
- "windows 0.59.0",
- "x11rb",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

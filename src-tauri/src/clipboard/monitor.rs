@@ -5,6 +5,7 @@ use std::panic;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::RwLock;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
@@ -19,10 +20,12 @@ pub struct ClipboardMonitor {
     last_hash: std::sync::Mutex<String>,
     /// 标志位：当我们自己写入剪贴板时临时跳过检测，避免回环
     pub skip_next: Arc<AtomicBool>,
+    /// 排除应用列表（bundle ID），来自这些应用的复制不会被记录
+    excluded_apps: Arc<RwLock<Vec<String>>>,
 }
 
 impl ClipboardMonitor {
-    pub fn new(db: Arc<Database>, app_data_dir: PathBuf, app_handle: AppHandle) -> Self {
+    pub fn new(db: Arc<Database>, app_data_dir: PathBuf, app_handle: AppHandle, excluded_apps: Arc<RwLock<Vec<String>>>) -> Self {
         let blobs_dir = app_data_dir.join("blobs");
         std::fs::create_dir_all(&blobs_dir).ok();
         Self {
@@ -31,6 +34,7 @@ impl ClipboardMonitor {
             app_handle,
             last_hash: std::sync::Mutex::new(String::new()),
             skip_next: Arc::new(AtomicBool::new(false)),
+            excluded_apps,
         }
     }
 
@@ -57,14 +61,56 @@ impl ClipboardMonitor {
                     continue;
                 }
 
+                // 检查当前前台应用是否在排除列表中
+                let mut is_excluded = false;
+                #[cfg(target_os = "macos")]
+                {
+                    if let Some(bundle_id) = crate::clipboard::get_frontmost_app_bundle_id() {
+                        let excluded = self.excluded_apps.read().unwrap_or_else(|e| e.into_inner());
+                        if excluded.iter().any(|id| id == &bundle_id) {
+                            is_excluded = true;
+                        }
+                    }
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    if let Some(exe_name) = crate::clipboard::get_frontmost_app_exe() {
+                        let excluded = self.excluded_apps.read().unwrap_or_else(|e| e.into_inner());
+                        if excluded.iter().any(|id| id.to_lowercase() == exe_name) {
+                            is_excluded = true;
+                        }
+                    }
+                }
+
                 // 使用 catch_unwind 保护，防止 clipboard-rs 内部 panic 导致进程崩溃
                 let monitor = self.clone();
                 let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-                    // 优先检测图片
-                    if let Ok(image_data) = ctx.get_image() {
-                        monitor.handle_image(image_data);
-                    } else if let Ok(text) = ctx.get_text() {
-                        monitor.handle_text(&text);
+                    if is_excluded {
+                        // 排除应用：只更新 hash 不入库，防止切换应用后误触发保存
+                        if let Ok(image_data) = ctx.get_image() {
+                            if let Ok(buf) = image_data.to_png() {
+                                let bytes = buf.get_bytes();
+                                if !bytes.is_empty() {
+                                    let hash = format!("{:x}", Sha256::digest(bytes));
+                                    let mut last = monitor.last_hash.lock().unwrap();
+                                    *last = hash;
+                                }
+                            }
+                        } else if let Ok(text) = ctx.get_text() {
+                            let text = text.trim().to_string();
+                            if !text.is_empty() {
+                                let hash = format!("{:x}", Sha256::digest(text.as_bytes()));
+                                let mut last = monitor.last_hash.lock().unwrap();
+                                *last = hash;
+                            }
+                        }
+                    } else {
+                        // 正常流程：检测并保存
+                        if let Ok(image_data) = ctx.get_image() {
+                            monitor.handle_image(image_data);
+                        } else if let Ok(text) = ctx.get_text() {
+                            monitor.handle_text(&text);
+                        }
                     }
                 }));
 

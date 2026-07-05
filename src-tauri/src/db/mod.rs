@@ -48,6 +48,9 @@ impl Database {
         // 兼容旧数据库：添加 tag 列（如果不存在）— 必须在创建索引之前
         let _ = conn.execute("ALTER TABLE clipboard_items ADD COLUMN tag TEXT", []);
 
+        // 兼容旧数据库：添加 expire_days 列到 tag_rules
+        let _ = conn.execute("ALTER TABLE tag_rules ADD COLUMN expire_days INTEGER NOT NULL DEFAULT 0", []);
+
         // 创建索引（此时 tag 列已确保存在）
         conn.execute_batch(
             "CREATE INDEX IF NOT EXISTS idx_content_hash ON clipboard_items(content_hash);

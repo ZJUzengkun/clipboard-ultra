@@ -1,10 +1,10 @@
 import { Component, For } from "solid-js";
-import { TagRule } from "../hooks/useClipboard";
+import { FilterTag } from "../hooks/useClipboard";
 
 interface TagBarProps {
-  rules: TagRule[];
+  tags: FilterTag[];
   activeTag: string;
-  onSelectTag: (tag: string) => void;
+  onSelectTag: (value: string) => void;
 }
 
 const TagBar: Component<TagBarProps> = (props) => {
@@ -16,15 +16,15 @@ const TagBar: Component<TagBarProps> = (props) => {
       >
         全部
       </button>
-      <For each={props.rules}>
-        {(rule) => (
+      <For each={props.tags}>
+        {(tag) => (
           <button
-            class={`tag-chip ${props.activeTag === rule.name ? "active" : ""}`}
-            onClick={() => props.onSelectTag(rule.name)}
-            style={{ "--chip-color": rule.color }}
+            class={`tag-chip ${props.activeTag === tag.value ? "active" : ""}`}
+            onClick={() => props.onSelectTag(tag.value)}
+            style={{ "--chip-color": tag.color }}
           >
-            <span class="tag-dot" style={{ background: rule.color }}></span>
-            {rule.name}
+            <span class="tag-dot" style={{ background: tag.color }}></span>
+            {tag.name}
           </button>
         )}
       </For>

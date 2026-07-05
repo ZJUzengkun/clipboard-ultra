@@ -108,7 +108,7 @@ commit message 中加 `[skip ci]` 可跳过 workflow（如纯文档更新）。
 
 ## macOS 特有问题
 
-- 未签名 .dmg 需要 `xattr -cr /Applications/clipboard-pro.app` 绕过 Gatekeeper
-- 闪退日志查看：`Console.app` 或 `log show --predicate 'process == "clipboard-pro"' --last 5m`
+- 未签名 .dmg 需要 `xattr -cr /Applications/clipboard-ultra.app` 绕过 Gatekeeper
+- 闪退日志查看：`Console.app` 或 `log show --predicate 'process == "clipboard-ultra"' --last 5m`
 - Accessibility 权限：系统设置 → 隐私与安全 → 辅助功能
 - Automation 权限：系统设置 → 隐私与安全 → 自动化（System Events 需单独授权）

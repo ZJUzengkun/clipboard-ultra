@@ -27,6 +27,7 @@ pub struct TagRule {
     pub pattern: String,
     pub color: String,
     pub priority: i64,
+    pub expire_days: i64,
 }
 
 impl Database {
@@ -278,7 +279,7 @@ impl Database {
     pub fn get_tag_rules(&self) -> Result<Vec<TagRule>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
-            .prepare("SELECT id, name, pattern, color, priority FROM tag_rules ORDER BY priority DESC")
+            .prepare("SELECT id, name, pattern, color, priority, expire_days FROM tag_rules ORDER BY priority DESC")
             .map_err(|e| e.to_string())?;
 
         let rules = stmt
@@ -289,6 +290,7 @@ impl Database {
                     pattern: row.get(2)?,
                     color: row.get(3)?,
                     priority: row.get(4)?,
+                    expire_days: row.get(5)?,
                 })
             })
             .map_err(|e| e.to_string())?
@@ -299,14 +301,14 @@ impl Database {
     }
 
     /// 新增标签规则
-    pub fn add_tag_rule(&self, name: &str, pattern: &str, color: &str, priority: i64) -> Result<TagRule, String> {
+    pub fn add_tag_rule(&self, name: &str, pattern: &str, color: &str, priority: i64, expire_days: i64) -> Result<TagRule, String> {
         // 验证正则合法性
         Regex::new(pattern).map_err(|e| format!("Invalid regex: {}", e))?;
 
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT INTO tag_rules (name, pattern, color, priority) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![name, pattern, color, priority],
+            "INSERT INTO tag_rules (name, pattern, color, priority, expire_days) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![name, pattern, color, priority, expire_days],
         )
         .map_err(|e| e.to_string())?;
 
@@ -317,6 +319,7 @@ impl Database {
             pattern: pattern.to_string(),
             color: color.to_string(),
             priority,
+            expire_days,
         })
     }
 
@@ -326,6 +329,124 @@ impl Database {
         conn.execute("DELETE FROM tag_rules WHERE id = ?1", [id])
             .map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    /// 更新标签规则的过期天数
+    pub fn update_tag_rule_expire(&self, id: i64, expire_days: i64) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE tag_rules SET expire_days = ?1 WHERE id = ?2",
+            rusqlite::params![expire_days, id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// 清理过期条目
+    /// 1. 置顶条目永不过期
+    /// 2. 有标签的条目按对应规则的 expire_days 清理
+    /// 3. 无标签条目按全局默认过期天数清理
+    pub fn cleanup_expired_items(&self) -> Result<u64, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let now = Utc::now().timestamp();
+        let mut total_deleted: u64 = 0;
+
+        // 获取所有标签规则及其过期天数
+        let mut stmt = conn
+            .prepare("SELECT name, expire_days FROM tag_rules WHERE expire_days > 0")
+            .map_err(|e| e.to_string())?;
+        let rules: Vec<(String, i64)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        // 按标签规则清理
+        for (tag_name, expire_days) in &rules {
+            let cutoff = now - expire_days * 86400;
+            let deleted = conn
+                .execute(
+                    "DELETE FROM clipboard_items WHERE tag = ?1 AND is_pinned = 0 AND updated_at < ?2",
+                    rusqlite::params![tag_name, cutoff],
+                )
+                .map_err(|e| e.to_string())?;
+            total_deleted += deleted as u64;
+        }
+
+        // 按内容类型清理无标签条目
+        let known_types = ["image", "text"];
+        let mut configured_types: Vec<String> = Vec::new();
+
+        for ct in &known_types {
+            let key = format!("expire_days_{}", ct);
+            let expire: i64 = conn
+                .query_row(
+                    "SELECT value FROM app_config WHERE key = ?1",
+                    rusqlite::params![key],
+                    |row| row.get::<_, String>(0),
+                )
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(-1); // -1 表示未配置，跟随默认
+
+            if expire >= 0 {
+                configured_types.push(ct.to_string());
+                if expire > 0 {
+                    let cutoff = now - expire * 86400;
+                    let deleted = conn
+                        .execute(
+                            "DELETE FROM clipboard_items WHERE tag IS NULL AND content_type = ?1 AND is_pinned = 0 AND updated_at < ?2",
+                            rusqlite::params![*ct, cutoff],
+                        )
+                        .map_err(|e| e.to_string())?;
+                    total_deleted += deleted as u64;
+                }
+                // expire == 0 表示永不过期，不清理
+            }
+        }
+
+        // 默认过期策略：覆盖未单独配置的内容类型
+        let default_expire: i64 = conn
+            .query_row(
+                "SELECT value FROM app_config WHERE key = 'default_expire_days'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+
+        if default_expire > 0 {
+            let cutoff = now - default_expire * 86400;
+            if configured_types.is_empty() {
+                // 没有任何类型单独配置，全部无标签条目用默认
+                let deleted = conn
+                    .execute(
+                        "DELETE FROM clipboard_items WHERE tag IS NULL AND is_pinned = 0 AND updated_at < ?1",
+                        rusqlite::params![cutoff],
+                    )
+                    .map_err(|e| e.to_string())?;
+                total_deleted += deleted as u64;
+            } else {
+                // 只清理未单独配置的类型
+                let placeholders: Vec<String> = configured_types.iter().enumerate().map(|(i, _)| format!("?{}", i + 2)).collect();
+                let sql = format!(
+                    "DELETE FROM clipboard_items WHERE tag IS NULL AND content_type NOT IN ({}) AND is_pinned = 0 AND updated_at < ?1",
+                    placeholders.join(", ")
+                );
+                let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+                let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+                params.push(Box::new(cutoff));
+                for ct in &configured_types {
+                    params.push(Box::new(ct.clone()));
+                }
+                let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+                let deleted = stmt.execute(param_refs.as_slice()).map_err(|e| e.to_string())?;
+                total_deleted += deleted as u64;
+            }
+        }
+
+        Ok(total_deleted)
     }
 
     /// 手动设置/清除条目的标签

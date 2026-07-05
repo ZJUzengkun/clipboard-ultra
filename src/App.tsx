@@ -14,6 +14,7 @@ import {
   getItemsByTag,
   setItemTag,
   TagRule,
+  FilterTag,
 } from "./hooks/useClipboard";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
@@ -27,6 +28,7 @@ function App() {
   const [activeTag, setActiveTag] = createSignal("");
   const [tagRules, setTagRules] = createSignal<TagRule[]>([]);
   const [pendingDeletes, setPendingDeletes] = createSignal<ClipboardItemData[]>([]);
+  const [ready, setReady] = createSignal(false);
   const [theme, setTheme] = createSignal<"dark" | "light">(
     window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"
   );
@@ -39,19 +41,41 @@ function App() {
     document.documentElement.setAttribute("data-theme", next);
   };
 
+  const allTags = (): FilterTag[] => {
+    const systemTags: FilterTag[] = [
+      { name: "文字", type: "content_type", value: "text", color: "#50d0a0" },
+      { name: "图片", type: "content_type", value: "image", color: "#7c6df0" },
+    ];
+    const ruleTags: FilterTag[] = tagRules().map((r) => ({
+      name: r.name,
+      type: "rule",
+      value: r.name,
+      color: r.color,
+    }));
+    return [...systemTags, ...ruleTags];
+  };
+
   const loadItems = async () => {
     try {
       const k = keyword();
-      const tag = activeTag();
+      const tagValue = activeTag();
       let result: ClipboardItemData[];
       if (k.length > 0) {
         result = await searchClipboard(k);
-      } else if (tag) {
-        result = await getItemsByTag(tag, 50);
+      } else if (tagValue) {
+        const filterTag = allTags().find((t) => t.value === tagValue);
+        if (filterTag?.type === "content_type") {
+          const all = await getClipboardItems(200);
+          result = all.filter((item) => item.content_type === filterTag.value);
+        } else {
+          result = await getItemsByTag(tagValue, 50);
+        }
       } else {
         result = await getClipboardItems(50);
       }
       setItems(result);
+      // 数据就绪后触发入场动画
+      requestAnimationFrame(() => setReady(true));
     } catch (e) {
       console.error("Failed to load items:", e);
     }
@@ -92,6 +116,8 @@ function App() {
 
     const unlistenShow = appWindow.listen("tauri://focus", () => {
       showTimestamp = Date.now();
+      // 先隐藏再加载，加载完触发入场
+      setReady(false);
       loadItems();
     });
 
@@ -264,9 +290,9 @@ function App() {
   });
 
   return (
-    <div class="app">
+    <div class={`app ${ready() ? "ready" : ""}`}>
       <div class="titlebar" data-tauri-drag-region>
-        <span class="titlebar-title">ClipBoard Pro</span>
+        <span class="titlebar-title">Clipboard Ultra</span>
         <div class="titlebar-right">
           <span class="titlebar-count">{items().length} 条</span>
           <button class="btn-theme" onClick={() => invoke("open_settings")} title="设置">
@@ -290,9 +316,7 @@ function App() {
         </div>
       </div>
       <SearchBar value={keyword()} onInput={handleSearch} />
-      <Show when={tagRules().length > 0}>
-        <TagBar rules={tagRules()} activeTag={activeTag()} onSelectTag={handleSelectTag} />
-      </Show>
+      <TagBar tags={allTags()} activeTag={activeTag()} onSelectTag={handleSelectTag} />
       <ClipboardList
         items={items()}
         selectedIndex={selectedIndex()}

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "clipboard-pro",
-  "version": "0.5.5",
-  "identifier": "com.zk.clipboard-pro",
+  "productName": "clipboard-ultra",
+  "version": "0.6.0",
+  "identifier": "com.zk.clipboard-ultra",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "ClipBoard Pro",
+        "title": "Clipboard Ultra",
         "width": 1920,
         "height": 360,
         "resizable": false,

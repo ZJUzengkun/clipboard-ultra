@@ -5,14 +5,10 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 pub const DEFAULT_SHORTCUT: &str = "CommandOrControl+Shift+V";
 
 /// 获取当前前台应用的 bundle ID（macOS）
+/// 使用 lsappinfo 命令，无需 Automation 权限
 #[cfg(target_os = "macos")]
 fn get_frontmost_app_bundle_id() -> Option<String> {
-    let output = std::process::Command::new("osascript")
-        .args(["-e", "tell application \"System Events\" to get bundle identifier of first process whose frontmost is true"])
-        .output()
-        .ok()?;
-    let id = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if id.is_empty() { None } else { Some(id) }
+    crate::clipboard::get_frontmost_app_bundle_id()
 }
 
 /// 将窗口定位到屏幕底部，宽度铺满屏幕
@@ -58,10 +54,17 @@ pub fn register_shortcuts(app: &AppHandle) -> Result<(), Box<dyn std::error::Err
                             // macOS: 记录当前前台应用，粘贴时恢复焦点
                             #[cfg(target_os = "macos")]
                             {
-                                if let Some(bundle_id) = get_frontmost_app_bundle_id() {
+                                if let Some(id) = get_frontmost_app_bundle_id() {
                                     let state = app.state::<crate::commands::AppState>();
-                                    *state.previous_app.lock().unwrap() = Some(bundle_id);
+                                    *state.previous_app.lock().unwrap() = Some(id);
                                 }
+                            }
+                            // Windows: 记录当前前台窗口句柄，粘贴时恢复焦点
+                            #[cfg(target_os = "windows")]
+                            {
+                                let hwnd = crate::clipboard::get_foreground_window_handle();
+                                let state = app.state::<crate::commands::AppState>();
+                                *state.previous_window_hwnd.lock().unwrap() = hwnd;
                             }
                             position_at_bottom(&window);
                             let _ = window.show();
