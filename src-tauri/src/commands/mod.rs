@@ -334,6 +334,7 @@ pub fn open_settings(app_handle: tauri::AppHandle) -> Result<(), String> {
 
     // 创建新的设置窗口
     let url = WebviewUrl::App("settings.html".into());
+    let use_decorations = cfg!(target_os = "windows");
     WebviewWindowBuilder::new(&app_handle, "settings", url)
         .title("偏好设置")
         .inner_size(580.0, 620.0)
@@ -342,7 +343,7 @@ pub fn open_settings(app_handle: tauri::AppHandle) -> Result<(), String> {
         .center()
         .focused(true)
         .visible(true)
-        .decorations(false)
+        .decorations(use_decorations)
         .build()
         .map_err(|e| e.to_string())?;
 

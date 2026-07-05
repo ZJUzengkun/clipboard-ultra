@@ -86,7 +86,7 @@
 
 body {
   font-family: "Geist", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  background: transparent;
+  background: #1e1e2e;
   color: var(--text-primary);
   overflow: hidden;
   user-select: none;
@@ -101,9 +101,8 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: var(--bg-glass);
-  backdrop-filter: blur(24px) saturate(1.5);
-  -webkit-backdrop-filter: blur(24px) saturate(1.5);
+  background: var(--bg-primary);
+  backdrop-filter: none;
   border-radius: 0;
   border-top: 1px solid var(--border);
   overflow: hidden;
