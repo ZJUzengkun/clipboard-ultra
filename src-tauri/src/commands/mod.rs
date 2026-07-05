@@ -333,9 +333,10 @@ pub fn open_settings(app_handle: tauri::AppHandle) -> Result<(), String> {
     }
 
     // 创建新的设置窗口
-    let url = WebviewUrl::App("settings.html".into());
+    let url = WebviewUrl::App("/settings.html".into());
+    println!("[open_settings] Creating settings window with url: {:?}", url);
     let use_decorations = cfg!(target_os = "windows");
-    WebviewWindowBuilder::new(&app_handle, "settings", url)
+    let window = WebviewWindowBuilder::new(&app_handle, "settings", url)
         .title("偏好设置")
         .inner_size(580.0, 620.0)
         .min_inner_size(480.0, 400.0)
@@ -345,7 +346,16 @@ pub fn open_settings(app_handle: tauri::AppHandle) -> Result<(), String> {
         .visible(true)
         .decorations(use_decorations)
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("Failed to create settings window: {}", e))?;
+
+    // Windows release 下也开启 DevTools 方便调试
+    #[cfg(debug_assertions)]
+    window.open_devtools();
+    #[cfg(not(debug_assertions))]
+    {
+        #[cfg(feature = "devtools")]
+        window.open_devtools();
+    }
 
     Ok(())
 }
