@@ -128,14 +128,6 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Verify frontend build output
-        run: |
-          npm run build
-          echo "=== dist directory contents ==="
-          ls -la dist/ || dir dist
-          echo "=== checking settings.html ==="
-          cat dist/settings.html | head -20 || type dist\settings.html
-
       - name: Import code signing certificate
         if: matrix.platform == 'macos-latest'
         env:
