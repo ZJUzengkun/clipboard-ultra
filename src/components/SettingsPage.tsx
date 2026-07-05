@@ -257,7 +257,7 @@ const SettingsPage: Component = () => {
   };
 
   const handleClose = () => {
-    getCurrentWindow().close();
+    getCurrentWindow().hide();
   };
 
   // ESC 关闭窗口

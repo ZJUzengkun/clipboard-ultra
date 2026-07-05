@@ -21,7 +21,8 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             "quit" => {
-                app.exit(0);
+                // 使用 process::exit 确保即使有窗口卡住也能退出
+                std::process::exit(0);
             }
             _ => {}
         })

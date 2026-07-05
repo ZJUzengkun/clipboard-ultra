@@ -23,6 +23,18 @@
         "visible": false,
         "skipTaskbar": true,
         "focus": false
+      },
+      {
+        "label": "settings",
+        "title": "偏好设置",
+        "url": "settings.html",
+        "width": 580,
+        "height": 620,
+        "minWidth": 480,
+        "minHeight": 400,
+        "resizable": true,
+        "visible": false,
+        "center": true
       }
     ],
     "security": {

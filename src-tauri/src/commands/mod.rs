@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::sync::RwLock;
-use tauri::{Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Manager, State};
 use serde::Serialize;
 
 /// macOS: 用 CGEvent 直接发送 Cmd+V（只需 Accessibility 权限）
@@ -323,104 +323,17 @@ pub fn set_item_tag(
     state.db.set_item_tag(id, tag_opt)
 }
 
-/// 打开独立的设置窗口
+/// 打开独立的设置窗口（使用 tauri.conf.json 中预定义的 settings 窗口）
 #[tauri::command]
 pub fn open_settings(app_handle: tauri::AppHandle) -> Result<(), String> {
-    use std::io::Write;
-
-    // 日志文件：写到 exe 同目录的 debug.log
-    let log_path = std::env::current_exe()
-        .unwrap_or_default()
-        .parent()
-        .unwrap_or(std::path::Path::new("."))
-        .join("debug.log");
-    let mut log_file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-        .ok();
-
-    macro_rules! log {
-        ($($arg:tt)*) => {
-            let msg = format!($($arg)*);
-            println!("{}", msg);
-            if let Some(ref mut f) = log_file {
-                let _ = writeln!(f, "[{}] {}", chrono::Local::now().format("%H:%M:%S"), msg);
-                let _ = f.flush();  // 强制刷新
-            }
-        };
-    }
-
-    log!("[open_settings] log_path: {:?}", log_path);
-
-    // 如果设置窗口已经存在，直接聚焦
+    // 获取预定义的 settings 窗口并显示
     if let Some(window) = app_handle.get_webview_window("settings") {
-        log!("[open_settings] Settings window already exists, focusing");
+        let _ = window.show();
         let _ = window.set_focus();
-        return Ok(());
+        Ok(())
+    } else {
+        Err("Settings window not found".to_string())
     }
-
-    // 尝试多种 URL 格式，记录每一步
-    // 先尝试用 data URL 测试 WebView2 是否能渲染任何内容
-    #[cfg(target_os = "windows")]
-    let url = {
-        // Windows: 用 External URL 加载 tauri 协议的 settings.html
-        let test_url = "https://tauri.localhost/settings.html".parse::<url::Url>();
-        match test_url {
-            Ok(u) => {
-                log!("[open_settings] Using External URL: {}", u);
-                WebviewUrl::External(u)
-            }
-            Err(e) => {
-                log!("[open_settings] URL parse error: {}, falling back to App path", e);
-                WebviewUrl::App("settings.html".into())
-            }
-        }
-    };
-    #[cfg(not(target_os = "windows"))]
-    let url = WebviewUrl::App("settings.html".into());
-
-    log!("[open_settings] Final URL: {:?}", url);
-    let use_decorations = cfg!(target_os = "windows");
-    log!("[open_settings] use_decorations: {}", use_decorations);
-
-    let window = match WebviewWindowBuilder::new(&app_handle, "settings", url)
-        .title("偏好设置")
-        .inner_size(580.0, 620.0)
-        .min_inner_size(480.0, 400.0)
-        .resizable(true)
-        .center()
-        .focused(true)
-        .visible(true)
-        .decorations(use_decorations)
-        .build()
-    {
-        Ok(w) => {
-            log!("[open_settings] Window created successfully");
-            w
-        }
-        Err(e) => {
-            log!("[open_settings] ERROR creating window: {}", e);
-            return Err(format!("Failed to create settings window: {}", e));
-        }
-    };
-
-    // 输出窗口实际加载的 URL
-    if let Ok(resolved_url) = window.url() {
-        log!("[open_settings] Resolved URL: {}", resolved_url);
-    }
-
-    // Windows release 下也开启 DevTools 方便调试
-    #[cfg(debug_assertions)]
-    window.open_devtools();
-    #[cfg(not(debug_assertions))]
-    {
-        #[cfg(feature = "devtools")]
-        window.open_devtools();
-    }
-
-    log!("[open_settings] Done");
-    Ok(())
 }
 
 // ========== 排除应用命令 ==========
