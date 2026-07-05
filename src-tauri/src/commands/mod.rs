@@ -493,12 +493,7 @@ pub fn get_running_apps() -> Result<Vec<RunningApp>, String> {
     {
         #[cfg(target_os = "windows")]
         {
-            use windows_sys::Win32::UI::WindowsAndMessaging::{
-                EnumWindows, GetWindowTextW, GetWindowTextLengthW, IsWindowVisible,
-            };
-            use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
-            use windows_sys::Win32::System::ProcessStatus::GetModuleFileNameExW;
-            use windows_sys::Win32::Foundation::CloseHandle;
+            use windows_sys::Win32::UI::WindowsAndMessaging::EnumWindows;
 
             let mut apps: Vec<RunningApp> = Vec::new();
 
