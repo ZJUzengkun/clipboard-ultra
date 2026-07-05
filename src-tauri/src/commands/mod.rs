@@ -326,17 +326,46 @@ pub fn set_item_tag(
 /// 打开独立的设置窗口
 #[tauri::command]
 pub fn open_settings(app_handle: tauri::AppHandle) -> Result<(), String> {
+    use std::io::Write;
+
+    // 日志文件：写到 exe 同目录的 debug.log
+    let log_path = std::env::current_exe()
+        .unwrap_or_default()
+        .parent()
+        .unwrap_or(std::path::Path::new("."))
+        .join("debug.log");
+    let mut log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .ok();
+
+    macro_rules! log {
+        ($($arg:tt)*) => {
+            let msg = format!($($arg)*);
+            println!("{}", msg);
+            if let Some(ref mut f) = log_file {
+                let _ = writeln!(f, "[{}] {}", chrono::Local::now().format("%H:%M:%S"), msg);
+            }
+        };
+    }
+
+    log!("[open_settings] log_path: {:?}", log_path);
+
     // 如果设置窗口已经存在，直接聚焦
     if let Some(window) = app_handle.get_webview_window("settings") {
+        log!("[open_settings] Settings window already exists, focusing");
         let _ = window.set_focus();
         return Ok(());
     }
 
     // 创建新的设置窗口
     let url = WebviewUrl::App("/settings.html".into());
-    println!("[open_settings] Creating settings window with url: {:?}", url);
+    log!("[open_settings] Creating settings window with url: {:?}", url);
     let use_decorations = cfg!(target_os = "windows");
-    let window = WebviewWindowBuilder::new(&app_handle, "settings", url)
+    log!("[open_settings] use_decorations: {}", use_decorations);
+
+    let window = match WebviewWindowBuilder::new(&app_handle, "settings", url)
         .title("偏好设置")
         .inner_size(580.0, 620.0)
         .min_inner_size(480.0, 400.0)
@@ -346,7 +375,21 @@ pub fn open_settings(app_handle: tauri::AppHandle) -> Result<(), String> {
         .visible(true)
         .decorations(use_decorations)
         .build()
-        .map_err(|e| format!("Failed to create settings window: {}", e))?;
+    {
+        Ok(w) => {
+            log!("[open_settings] Window created successfully");
+            w
+        }
+        Err(e) => {
+            log!("[open_settings] ERROR creating window: {}", e);
+            return Err(format!("Failed to create settings window: {}", e));
+        }
+    };
+
+    // 输出窗口实际加载的 URL
+    if let Ok(resolved_url) = window.url() {
+        log!("[open_settings] Resolved URL: {}", resolved_url);
+    }
 
     // Windows release 下也开启 DevTools 方便调试
     #[cfg(debug_assertions)]
@@ -357,6 +400,7 @@ pub fn open_settings(app_handle: tauri::AppHandle) -> Result<(), String> {
         window.open_devtools();
     }
 
+    log!("[open_settings] Done");
     Ok(())
 }
 
