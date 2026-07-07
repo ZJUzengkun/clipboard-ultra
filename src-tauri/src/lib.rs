@@ -104,6 +104,17 @@ pub fn run() {
                 }
             }
 
+            // 拦截设置窗口的关闭事件：阻止销毁，改为隐藏（预定义窗口销毁后无法再次打开）
+            if let Some(settings_win) = app.get_webview_window("settings") {
+                let sw = settings_win.clone();
+                settings_win.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = sw.hide();
+                    }
+                });
+            }
+
             // 创建系统托盘
             tray::create_tray(&handle)
                 .map_err(|e| e.to_string())?;
