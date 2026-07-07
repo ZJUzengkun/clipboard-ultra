@@ -228,6 +228,18 @@ impl Database {
         Ok(())
     }
 
+    /// 刷新条目的 updated_at 为当前时间（用于粘贴使用时延长过期时间）
+    pub fn touch_item(&self, id: i64) -> Result<(), String> {
+        let now = Utc::now().timestamp();
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE clipboard_items SET updated_at = ?1 WHERE id = ?2",
+            rusqlite::params![now, id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     /// 清理超限记录（保留最近 1000 条未收藏的）
     fn cleanup_old_items(&self, conn: &rusqlite::Connection) -> Result<(), String> {
         let count: i64 = conn

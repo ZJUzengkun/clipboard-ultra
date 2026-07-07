@@ -107,6 +107,9 @@ pub fn paste_item(
         .get_item_by_id(id)?
         .ok_or_else(|| "Item not found".to_string())?;
 
+    // 刷新 updated_at，防止常用条目被过期清理
+    state.db.touch_item(id)?;
+
     // 写入系统剪贴板
     // 设置跳过标志，防止 monitor 回环检测到自己写入的内容
     state.skip_clipboard_check.store(true, Ordering::SeqCst);

@@ -116,9 +116,18 @@ function App() {
 
     const unlistenShow = appWindow.listen("tauri://focus", () => {
       showTimestamp = Date.now();
+      // 重置搜索状态
+      setKeyword("");
+      setActiveTag("");
+      setSelectedIndex(0);
       // 先隐藏再加载，加载完触发入场
       setReady(false);
       loadItems();
+      // 自动聚焦搜索框
+      requestAnimationFrame(() => {
+        const input = document.querySelector(".search-bar input") as HTMLInputElement;
+        if (input) input.focus();
+      });
     });
 
     const unlisten = appWindow.onFocusChanged(({ payload: focused }) => {
