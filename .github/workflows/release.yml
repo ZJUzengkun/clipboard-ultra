@@ -74,20 +74,24 @@ jobs:
         with:
           script: |
             const tag = context.ref.replace('refs/tags/', '');
-            // 幂等：先删除同名旧 release（包括 draft），避免 already_exists 冲突
+            // 幂等：仅删除同名的 draft 旧 release（保护已发布的正式 release），避免 already_exists 冲突
             try {
               const { data: existing } = await github.rest.repos.getReleaseByTag({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 tag,
               });
-              await github.rest.repos.deleteRelease({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: existing.id,
-              });
+              if (existing.draft) {
+                await github.rest.repos.deleteRelease({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  release_id: existing.id,
+                });
+              } else {
+                throw new Error(`Release ${tag} 已正式发布，拒绝覆盖。如需重发请先手动删除该 release。`);
+              }
             } catch (e) {
-              // 不存在则忽略
+              if (e.status !== 404) throw e; // 404=不存在则忽略；其他错误（含上面的拒绝覆盖）向上抛出
             }
             const { data } = await github.rest.repos.createRelease({
               owner: context.repo.owner,
