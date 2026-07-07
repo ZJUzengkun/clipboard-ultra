@@ -2,6 +2,9 @@ import { Component, createSignal, onMount, onCleanup, Show, For } from "solid-js
 import { getShortcut, setShortcut, getTagRules, addTagRule, deleteTagRule, updateTagRuleExpire, getDefaultExpireDays, setDefaultExpireDays, getContentTypeExpireDays, setContentTypeExpireDays, TagRule, getExcludedApps, getExcludedAppsNames, addExcludedApp, removeExcludedApp, getRunningApps, RunningApp } from "../hooks/useClipboard";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emit } from "@tauri-apps/api/event";
+import { getVersion } from "@tauri-apps/api/app";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 
 const SettingsPage: Component = () => {
   const [currentShortcut, setCurrentShortcut] = createSignal("");
@@ -32,6 +35,14 @@ const SettingsPage: Component = () => {
   const [imageExpire, setImageExpire] = createSignal(0);
   const [textExpire, setTextExpire] = createSignal(0);
   const [newRuleExpire, setNewRuleExpire] = createSignal(0);
+
+  // 更新状态
+  const [appVersion, setAppVersion] = createSignal("");
+  const [updateStatus, setUpdateStatus] = createSignal<"idle" | "checking" | "available" | "downloading" | "latest" | "error">("idle");
+  const [updateVersion, setUpdateVersion] = createSignal("");
+  const [updateError, setUpdateError] = createSignal("");
+  const [downloadProgress, setDownloadProgress] = createSignal(0);
+  let pendingUpdate: Awaited<ReturnType<typeof check>> = null;
 
   const expireOptions = [
     { value: 0, label: "永不过期" },
@@ -82,7 +93,63 @@ const SettingsPage: Component = () => {
     } catch (e) {
       console.error("Failed to load content type expire days:", e);
     }
+    try {
+      setAppVersion(await getVersion());
+    } catch (e) {
+      console.error("Failed to get app version:", e);
+    }
   });
+
+  // 检查更新
+  const handleCheckUpdate = async () => {
+    setUpdateStatus("checking");
+    setUpdateError("");
+    try {
+      const update = await check();
+      if (update) {
+        pendingUpdate = update;
+        setUpdateVersion(update.version);
+        setUpdateStatus("available");
+      } else {
+        setUpdateStatus("latest");
+      }
+    } catch (e: any) {
+      setUpdateError(`检查失败: ${e}`);
+      setUpdateStatus("error");
+    }
+  };
+
+  // 下载并安装更新
+  const handleInstallUpdate = async () => {
+    if (!pendingUpdate) return;
+    setUpdateStatus("downloading");
+    setDownloadProgress(0);
+    let downloaded = 0;
+    let contentLength = 0;
+    try {
+      await pendingUpdate.downloadAndInstall((event) => {
+        switch (event.event) {
+          case "Started":
+            contentLength = event.data.contentLength ?? 0;
+            break;
+          case "Progress":
+            downloaded += event.data.chunkLength;
+            if (contentLength > 0) {
+              setDownloadProgress(Math.round((downloaded / contentLength) * 100));
+            }
+            break;
+          case "Finished":
+            setDownloadProgress(100);
+            break;
+        }
+      });
+      // 安装完成，重启应用
+      await relaunch();
+    } catch (e: any) {
+      setUpdateError(`更新失败: ${e}`);
+      setUpdateStatus("error");
+    }
+  };
 
   const notifyMainWindow = () => {
     // 通知主窗口刷新标签规则
@@ -622,6 +689,54 @@ const SettingsPage: Component = () => {
               </select>
             </div>
             <p class="data-mgmt-note">置顶条目永不过期，有标签的条目按标签规则配置过期</p>
+          </div>
+        </section>
+
+        {/* 关于与更新区域 */}
+        <section class="settings-section">
+          <div class="section-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="section-icon">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            <span>关于与更新</span>
+          </div>
+
+          <div class="data-management-card">
+            <div class="data-mgmt-row">
+              <div class="data-mgmt-info">
+                <span class="data-mgmt-label">当前版本</span>
+                <span class="data-mgmt-desc">Clipboard Ultra v{appVersion()}</span>
+              </div>
+              <Show when={updateStatus() !== "downloading"}>
+                <button class="btn-add-rule" onClick={handleCheckUpdate} disabled={updateStatus() === "checking"}>
+                  {updateStatus() === "checking" ? "检查中..." : "检查更新"}
+                </button>
+              </Show>
+            </div>
+
+            <Show when={updateStatus() === "latest"}>
+              <p class="settings-success">已是最新版本</p>
+            </Show>
+
+            <Show when={updateStatus() === "available"}>
+              <div class="update-available">
+                <span class="update-available-text">发现新版本 v{updateVersion()}</span>
+                <button class="btn-save" onClick={handleInstallUpdate}>下载并安装</button>
+              </div>
+            </Show>
+
+            <Show when={updateStatus() === "downloading"}>
+              <div class="update-progress">
+                <div class="update-progress-bar">
+                  <div class="update-progress-fill" style={{ width: `${downloadProgress()}%` }} />
+                </div>
+                <span class="update-progress-text">下载中 {downloadProgress()}%，完成后将自动重启</span>
+              </div>
+            </Show>
+
+            <Show when={updateError()}>
+              <p class="settings-error">{updateError()}</p>
+            </Show>
           </div>
         </section>
       </div>

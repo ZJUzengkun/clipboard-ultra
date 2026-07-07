@@ -14,6 +14,8 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             // macOS: 首次启动时提示用户授权辅助功能权限（仅未授权时弹窗）
             #[cfg(target_os = "macos")]
