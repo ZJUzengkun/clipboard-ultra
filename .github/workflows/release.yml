@@ -163,7 +163,7 @@ jobs:
           security import /tmp/cert.p12 -k build.keychain -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
           # 自签名证书在全新 keychain 中默认不被 codesigning 策略视为有效，需显式信任为根
-          security find-certificate -c "Clipboard Ultra Dev" -p build.keychain > /tmp/cert-pub.pem
+          security find-certificate -c "ZK Code" -p build.keychain > /tmp/cert-pub.pem
           sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain /tmp/cert-pub.pem
           echo "=== 可用签名身份（信任后）==="
           security find-identity -v -p codesigning
@@ -179,7 +179,7 @@ jobs:
           CARGO_INCREMENTAL: '0'
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_KEY_PWD }}
-          APPLE_SIGNING_IDENTITY: Clipboard Ultra Dev
+          APPLE_SIGNING_IDENTITY: ZK Code
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
@@ -192,7 +192,7 @@ jobs:
           CARGO_INCREMENTAL: '1'
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_KEY_PWD }}
-          APPLE_SIGNING_IDENTITY: Clipboard Ultra Dev
+          APPLE_SIGNING_IDENTITY: ZK Code
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
