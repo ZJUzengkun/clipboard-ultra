@@ -10,7 +10,7 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &quit])?;
 
-    TrayIconBuilder::new()
+    let mut builder = TrayIconBuilder::new()
         .menu(&menu)
         .tooltip("Clipboard Ultra")
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -25,8 +25,14 @@ pub fn create_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(0);
             }
             _ => {}
-        })
-        .build(app)?;
+        });
+
+    // 设置托盘图标：缺失时 macOS 菜单栏不会显示任何图标
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+
+    builder.build(app)?;
 
     Ok(())
 }

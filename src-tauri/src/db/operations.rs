@@ -278,6 +278,10 @@ impl Database {
             .collect();
 
         for (name, pattern) in rules {
+            // 空正则表示手动标签，不参与自动匹配（空正则会匹配一切，必须跳过）
+            if pattern.is_empty() {
+                continue;
+            }
             if let Ok(re) = Regex::new(&pattern) {
                 if re.is_match(content) {
                     return Some(name);
@@ -314,8 +318,10 @@ impl Database {
 
     /// 新增标签规则
     pub fn add_tag_rule(&self, name: &str, pattern: &str, color: &str, priority: i64, expire_days: i64) -> Result<TagRule, String> {
-        // 验证正则合法性
-        Regex::new(pattern).map_err(|e| format!("Invalid regex: {}", e))?;
+        // 验证正则合法性（空正则表示手动标签，跳过校验）
+        if !pattern.is_empty() {
+            Regex::new(pattern).map_err(|e| format!("Invalid regex: {}", e))?;
+        }
 
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(

@@ -1166,6 +1166,14 @@ body {
   max-width: 100%;
 }
 
+.tag-rule-manual {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  display: inline-block;
+  width: fit-content;
+}
+
 .btn-rule-delete {
   width: 28px;
   height: 28px;

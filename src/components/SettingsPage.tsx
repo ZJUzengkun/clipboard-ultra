@@ -159,15 +159,18 @@ const SettingsPage: Component = () => {
   const handleAddRule = async () => {
     const name = newRuleName().trim();
     const pattern = newRulePattern().trim();
-    if (!name || !pattern) {
-      setRuleError("名称和正则不能为空");
+    if (!name) {
+      setRuleError("标签名称不能为空");
       return;
     }
-    try {
-      new RegExp(pattern);
-    } catch {
-      setRuleError("正则表达式格式不合法");
-      return;
+    // 正则选填：留空则为手动标签；填了才校验合法性
+    if (pattern) {
+      try {
+        new RegExp(pattern);
+      } catch {
+        setRuleError("正则表达式格式不合法");
+        return;
+      }
     }
     setRuleError("");
     try {
@@ -442,7 +445,9 @@ const SettingsPage: Component = () => {
                     <span class="tag-dot-lg" style={{ background: rule.color }}></span>
                     <div class="tag-rule-info">
                       <span class="tag-rule-name">{rule.name}</span>
-                      <code class="tag-rule-pattern">{rule.pattern}</code>
+                      <Show when={rule.pattern} fallback={<span class="tag-rule-manual">手动打标签</span>}>
+                        <code class="tag-rule-pattern">{rule.pattern}</code>
+                      </Show>
                     </div>
                     <select
                       class="expire-select"
@@ -487,7 +492,7 @@ const SettingsPage: Component = () => {
               />
               <input
                 type="text"
-                placeholder="正则表达式 (如 https?://)"
+                placeholder="正则表达式（留空=手动标签）"
                 value={newRulePattern()}
                 onInput={(e) => setNewRulePattern(e.currentTarget.value)}
                 class="tag-rule-input input-pattern"

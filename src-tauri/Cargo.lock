@@ -530,7 +530,7 @@ dependencies = [
 
 [[package]]
 name = "clipboard-ultra"
-version = "0.8.1"
+version = "0.8.3"
 dependencies = [
  "chrono",
  "clipboard-rs",
