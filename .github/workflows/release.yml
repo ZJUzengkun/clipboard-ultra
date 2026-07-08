@@ -162,7 +162,10 @@ jobs:
           security set-keychain-settings -t 3600 -u build.keychain
           security import /tmp/cert.p12 -k build.keychain -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
-          echo "=== 可用签名身份（默认搜索列表）==="
+          # 自签名证书在全新 keychain 中默认不被 codesigning 策略视为有效，需显式信任为根
+          security find-certificate -c "Clipboard Ultra Dev" -p build.keychain > /tmp/cert-pub.pem
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain /tmp/cert-pub.pem
+          echo "=== 可用签名身份（信任后）==="
           security find-identity -v -p codesigning
 
       - name: Build Tauri app
