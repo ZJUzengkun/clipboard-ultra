@@ -148,21 +148,6 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Import code signing certificate
-        if: matrix.platform == 'macos-latest'
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE }}
-          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
-        run: |
-          echo $CERTIFICATE_BASE64 | base64 --decode > /tmp/cert.p12
-          security create-keychain -p actions build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p actions build.keychain
-          security set-keychain-settings build.keychain
-          security import /tmp/cert.p12 -k build.keychain -P $CERTIFICATE_PASSWORD -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -s -k actions build.keychain
-          security add-trusted-cert -d -r trustRoot -p codeSign -k build.keychain /tmp/cert.pem 2>/dev/null || true
-
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         id: tauri-build
@@ -174,18 +159,12 @@ jobs:
           CARGO_INCREMENTAL: '0'
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_KEY_PWD }}
+          APPLE_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          APPLE_SIGNING_IDENTITY: Clipboard Ultra Dev
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
-
-      - name: Sign app bundle
-        if: matrix.platform == 'macos-latest' && steps.tauri-build.outcome == 'success'
-        timeout-minutes: 2
-        continue-on-error: true
-        run: |
-          # 重新解锁 keychain（防止构建耗时过长导致 keychain 自动上锁）
-          security unlock-keychain -p actions build.keychain
-          codesign --force --deep --sign "Clipboard Ultra Dev" src-tauri/target/aarch64-apple-darwin/release/bundle/macos/clipboard-ultra.app
 
       - name: Build Tauri app (fallback without sccache)
         if: steps.tauri-build.outcome == 'failure'
@@ -195,6 +174,9 @@ jobs:
           CARGO_INCREMENTAL: '1'
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_KEY_PWD }}
+          APPLE_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          APPLE_SIGNING_IDENTITY: Clipboard Ultra Dev
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
