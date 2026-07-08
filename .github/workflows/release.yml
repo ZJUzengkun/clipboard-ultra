@@ -157,12 +157,13 @@ jobs:
           echo "$MACOS_CERTIFICATE" | base64 --decode > /tmp/cert.p12
           security create-keychain -p actions build.keychain
           security default-keychain -s build.keychain
+          security list-keychains -d user -s build.keychain login.keychain-db
           security unlock-keychain -p actions build.keychain
           security set-keychain-settings -t 3600 -u build.keychain
           security import /tmp/cert.p12 -k build.keychain -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
-          echo "=== 可用签名身份 ==="
-          security find-identity -v -p codesigning build.keychain
+          echo "=== 可用签名身份（默认搜索列表）==="
+          security find-identity -v -p codesigning
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -175,8 +176,6 @@ jobs:
           CARGO_INCREMENTAL: '0'
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_KEY_PWD }}
-          APPLE_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
           APPLE_SIGNING_IDENTITY: Clipboard Ultra Dev
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
@@ -190,8 +189,6 @@ jobs:
           CARGO_INCREMENTAL: '1'
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_KEY_PWD }}
-          APPLE_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
           APPLE_SIGNING_IDENTITY: Clipboard Ultra Dev
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
