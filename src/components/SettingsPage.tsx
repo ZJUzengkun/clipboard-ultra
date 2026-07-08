@@ -1,5 +1,5 @@
 import { Component, createSignal, onMount, onCleanup, Show, For } from "solid-js";
-import { getShortcut, setShortcut, getTagRules, addTagRule, deleteTagRule, updateTagRuleExpire, getDefaultExpireDays, setDefaultExpireDays, getContentTypeExpireDays, setContentTypeExpireDays, TagRule, getExcludedApps, getExcludedAppsNames, addExcludedApp, removeExcludedApp, getRunningApps, RunningApp } from "../hooks/useClipboard";
+import { getShortcut, setShortcut, getTagRules, addTagRule, deleteTagRule, updateTagRuleExpire, getDefaultExpireDays, setDefaultExpireDays, getContentTypeExpireDays, setContentTypeExpireDays, getMaxItems, setMaxItems, TagRule, getExcludedApps, getExcludedAppsNames, addExcludedApp, removeExcludedApp, getRunningApps, RunningApp } from "../hooks/useClipboard";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emit } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
@@ -35,6 +35,9 @@ const SettingsPage: Component = () => {
   const [imageExpire, setImageExpire] = createSignal(0);
   const [textExpire, setTextExpire] = createSignal(0);
   const [newRuleExpire, setNewRuleExpire] = createSignal(0);
+
+  // 最大保存数量（-1 = 不限制）
+  const [maxItems, setMaxItemsSignal] = createSignal(1000);
 
   // 更新状态
   const [appVersion, setAppVersion] = createSignal("");
@@ -84,6 +87,12 @@ const SettingsPage: Component = () => {
       setDefaultExpire(days);
     } catch (e) {
       console.error("Failed to load default expire days:", e);
+    }
+    try {
+      const count = await getMaxItems();
+      setMaxItemsSignal(count);
+    } catch (e) {
+      console.error("Failed to load max items:", e);
     }
     try {
       const imgDays = await getContentTypeExpireDays("image");
@@ -693,6 +702,28 @@ const SettingsPage: Component = () => {
                 </For>
               </select>
             </div>
+            <div class="data-mgmt-row">
+              <div class="data-mgmt-info">
+                <span class="data-mgmt-label">最大保存数量</span>
+                <span class="data-mgmt-desc">超出后自动清理最早的未收藏条目（-1 = 不限制）</span>
+              </div>
+              <input
+                type="number"
+                class="expire-select"
+                min="-1"
+                step="1"
+                value={maxItems()}
+                onChange={async (e) => {
+                  let count = parseInt(e.currentTarget.value);
+                  if (isNaN(count)) count = 1000;
+                  if (count < 0) count = -1;
+                  await setMaxItems(count);
+                  setMaxItemsSignal(count);
+                  e.currentTarget.value = String(count);
+                }}
+              />
+            </div>
+            <p class="data-mgmt-note">设置过大或不限制会导致历史条目持续堆积，占用磁盘空间并拖慢启动与搜索速度，建议保持在 1000 以内。</p>
             <p class="data-mgmt-note">置顶条目永不过期，有标签的条目按标签规则配置过期</p>
           </div>
         </section>

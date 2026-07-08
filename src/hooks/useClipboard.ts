@@ -75,6 +75,14 @@ export async function setDefaultExpireDays(days: number): Promise<void> {
   return invoke("set_default_expire_days", { days });
 }
 
+export async function getMaxItems(): Promise<number> {
+  return invoke("get_max_items");
+}
+
+export async function setMaxItems(count: number): Promise<void> {
+  return invoke("set_max_items", { count });
+}
+
 export async function getContentTypeExpireDays(contentType: string): Promise<number> {
   return invoke("get_content_type_expire_days", { contentType });
 }

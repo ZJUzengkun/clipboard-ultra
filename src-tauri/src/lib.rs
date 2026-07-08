@@ -136,6 +136,8 @@ pub fn run() {
             commands::update_tag_rule_expire,
             commands::get_default_expire_days,
             commands::set_default_expire_days,
+            commands::get_max_items,
+            commands::set_max_items,
             commands::get_content_type_expire_days,
             commands::set_content_type_expire_days,
             commands::get_items_by_tag,

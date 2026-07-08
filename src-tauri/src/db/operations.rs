@@ -240,8 +240,24 @@ impl Database {
         Ok(())
     }
 
-    /// 清理超限记录（保留最近 1000 条未收藏的）
+    /// 清理超限记录（保留最近 N 条未收藏的，N 来自 app_config.max_items，默认 1000，负数表示不限制）
     fn cleanup_old_items(&self, conn: &rusqlite::Connection) -> Result<(), String> {
+        // 读取用户配置的最大保存数量，默认 1000
+        let max_items: i64 = conn
+            .query_row(
+                "SELECT value FROM app_config WHERE key = 'max_items'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1000);
+
+        // 负数表示不限制，跳过清理
+        if max_items < 0 {
+            return Ok(());
+        }
+
         let count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM clipboard_items WHERE is_pinned = 0",
@@ -250,13 +266,13 @@ impl Database {
             )
             .map_err(|e| e.to_string())?;
 
-        if count > 1000 {
+        if count > max_items {
             conn.execute(
                 "DELETE FROM clipboard_items WHERE id IN (
                     SELECT id FROM clipboard_items WHERE is_pinned = 0
                     ORDER BY updated_at ASC LIMIT ?1
                 )",
-                [count - 1000],
+                [count - max_items],
             )
             .map_err(|e| e.to_string())?;
         }

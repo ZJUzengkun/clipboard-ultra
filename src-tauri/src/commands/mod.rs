@@ -275,6 +275,24 @@ pub fn set_default_expire_days(
     state.db.set_config("default_expire_days", &days.to_string())
 }
 
+/// 获取最大保存数量（默认 1000，-1 表示不限制）
+#[tauri::command]
+pub fn get_max_items(state: State<AppState>) -> Result<i64, String> {
+    let val = state.db.get_config("max_items")?
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1000);
+    Ok(val)
+}
+
+/// 设置最大保存数量（-1 表示不限制）
+#[tauri::command]
+pub fn set_max_items(
+    state: State<AppState>,
+    count: i64,
+) -> Result<(), String> {
+    state.db.set_config("max_items", &count.to_string())
+}
+
 /// 获取指定内容类型的过期天数
 #[tauri::command]
 pub fn get_content_type_expire_days(
