@@ -141,7 +141,7 @@ impl Database {
                 "SELECT id, content_type, content, content_hash, blob_path, tag, created_at, updated_at, is_pinned
                  FROM clipboard_items
                  WHERE content LIKE ?1
-                 ORDER BY is_pinned DESC, updated_at DESC
+                 ORDER BY updated_at DESC
                  LIMIT 50",
             )
             .map_err(|e| e.to_string())?;
@@ -174,7 +174,7 @@ impl Database {
             .prepare(
                 "SELECT id, content_type, content, content_hash, blob_path, tag, created_at, updated_at, is_pinned
                  FROM clipboard_items
-                 ORDER BY is_pinned DESC, updated_at DESC
+                 ORDER BY updated_at DESC
                  LIMIT ?1",
             )
             .map_err(|e| e.to_string())?;
@@ -502,7 +502,7 @@ impl Database {
                 "SELECT id, content_type, content, content_hash, blob_path, tag, created_at, updated_at, is_pinned
                  FROM clipboard_items
                  WHERE tag = ?1
-                 ORDER BY is_pinned DESC, updated_at DESC
+                 ORDER BY updated_at DESC
                  LIMIT ?2",
             )
             .map_err(|e| e.to_string())?;
