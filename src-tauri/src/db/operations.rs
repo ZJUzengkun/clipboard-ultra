@@ -167,13 +167,54 @@ impl Database {
         Ok(items)
     }
 
-    /// 获取最近的历史列表
-    pub fn get_recent(&self, limit: u32) -> Result<Vec<ClipboardItem>, String> {
+    /// 获取最近的历史列表（支持分页 offset）
+    pub fn get_recent(&self, limit: u32, offset: u32) -> Result<Vec<ClipboardItem>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
             .prepare(
                 "SELECT id, content_type, content, content_hash, blob_path, tag, created_at, updated_at, is_pinned
                  FROM clipboard_items
+                 ORDER BY updated_at DESC
+                 LIMIT ?1 OFFSET ?2",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let items = stmt
+            .query_map([limit, offset], |row| {
+                Ok(ClipboardItem {
+                    id: row.get(0)?,
+                    content_type: row.get(1)?,
+                    content: row.get(2)?,
+                    content_hash: row.get(3)?,
+                    blob_path: row.get(4)?,
+                    tag: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                    is_pinned: row.get::<_, i32>(8)? == 1,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(items)
+    }
+
+    /// 获取历史条目总数
+    pub fn count_items(&self) -> Result<i64, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.query_row("SELECT COUNT(*) FROM clipboard_items", [], |row| row.get(0))
+            .map_err(|e| e.to_string())
+    }
+
+    /// 获取收藏（置顶）条目列表
+    pub fn get_pinned(&self, limit: u32) -> Result<Vec<ClipboardItem>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, content_type, content, content_hash, blob_path, tag, created_at, updated_at, is_pinned
+                 FROM clipboard_items
+                 WHERE is_pinned = 1
                  ORDER BY updated_at DESC
                  LIMIT ?1",
             )

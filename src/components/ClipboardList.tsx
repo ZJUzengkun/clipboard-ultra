@@ -1,4 +1,4 @@
-import { Component, For, Show } from "solid-js";
+import { Component, For, Show, onMount, onCleanup } from "solid-js";
 import ClipboardItem, { ClipboardItemData } from "./ClipboardItem";
 import { TagRule } from "../hooks/useClipboard";
 
@@ -11,11 +11,28 @@ interface ClipboardListProps {
   onTogglePin: (id: number) => void;
   onDelete: (id: number) => void;
   onSetTag: (id: number, tag: string) => void;
+  hasMore?: boolean;
+  onLoadMore?: () => void;
 }
 
 const ClipboardList: Component<ClipboardListProps> = (props) => {
+  let listRef: HTMLDivElement | undefined;
+
+  onMount(() => {
+    if (!listRef) return;
+    const onScroll = () => {
+      if (!props.hasMore) return;
+      // 横向列表：滚到接近右端（预留 300px）时加载下一页
+      if (listRef!.scrollLeft + listRef!.clientWidth >= listRef!.scrollWidth - 300) {
+        props.onLoadMore?.();
+      }
+    };
+    listRef.addEventListener("scroll", onScroll, { passive: true });
+    onCleanup(() => listRef?.removeEventListener("scroll", onScroll));
+  });
+
   return (
-    <div class="clipboard-list">
+    <div class="clipboard-list" ref={listRef}>
       <Show
         when={props.items.length > 0}
         fallback={

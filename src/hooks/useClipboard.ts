@@ -12,13 +12,21 @@ export interface TagRule {
 
 export interface FilterTag {
   name: string;       // 显示名称，如"图片"、"代码"
-  type: "content_type" | "rule";  // 标签来源
-  value: string;      // 筛选值：content_type 时为 "image"；rule 时为 tag name
+  type: "content_type" | "rule" | "pinned";  // 标签来源
+  value: string;      // 筛选值：content_type 时为 "image"；rule 时为 tag name；pinned 时为 "__pinned__"
   color: string;      // 标签颜色
 }
 
-export async function getClipboardItems(limit?: number): Promise<ClipboardItemData[]> {
-  return invoke("get_clipboard_items", { limit: limit || 50 });
+export async function getClipboardItems(limit?: number, offset?: number): Promise<ClipboardItemData[]> {
+  return invoke("get_clipboard_items", { limit: limit || 50, offset: offset || 0 });
+}
+
+export async function countItems(): Promise<number> {
+  return invoke("count_items");
+}
+
+export async function getPinnedItems(limit?: number): Promise<ClipboardItemData[]> {
+  return invoke("get_pinned_items", { limit: limit || 200 });
 }
 
 export async function searchClipboard(keyword: string): Promise<ClipboardItemData[]> {

@@ -5,6 +5,8 @@ import TagBar from "./components/TagBar";
 import { ClipboardItemData } from "./components/ClipboardItem";
 import {
   getClipboardItems,
+  countItems,
+  getPinnedItems,
   searchClipboard,
   togglePinItem,
   deleteClipboardItem,
@@ -29,6 +31,10 @@ function App() {
   const [tagRules, setTagRules] = createSignal<TagRule[]>([]);
   const [pendingDeletes, setPendingDeletes] = createSignal<ClipboardItemData[]>([]);
   const [ready, setReady] = createSignal(false);
+  const [total, setTotal] = createSignal(0);
+  const [hasMore, setHasMore] = createSignal(false);
+  const [loadingMore, setLoadingMore] = createSignal(false);
+  const PAGE_SIZE = 50;
   const [theme, setTheme] = createSignal<"dark" | "light">(
     window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"
   );
@@ -43,6 +49,7 @@ function App() {
 
   const allTags = (): FilterTag[] => {
     const systemTags: FilterTag[] = [
+      { name: "收藏", type: "pinned", value: "__pinned__", color: "#f5c518" },
       { name: "文字", type: "content_type", value: "text", color: "#50d0a0" },
       { name: "图片", type: "content_type", value: "image", color: "#7c6df0" },
     ];
@@ -60,24 +67,58 @@ function App() {
       const k = keyword();
       const tagValue = activeTag();
       let result: ClipboardItemData[];
+      let paged = false;
       if (k.length > 0) {
         result = await searchClipboard(k);
       } else if (tagValue) {
         const filterTag = allTags().find((t) => t.value === tagValue);
-        if (filterTag?.type === "content_type") {
+        if (filterTag?.type === "pinned") {
+          result = await getPinnedItems(200);
+        } else if (filterTag?.type === "content_type") {
           const all = await getClipboardItems(200);
           result = all.filter((item) => item.content_type === filterTag.value);
         } else {
           result = await getItemsByTag(tagValue, 50);
         }
       } else {
-        result = await getClipboardItems(50);
+        // 全部视图：分页加载首屏
+        result = await getClipboardItems(PAGE_SIZE, 0);
+        paged = true;
       }
       setItems(result);
+      if (paged) {
+        setHasMore(result.length === PAGE_SIZE);
+        setTotal(await countItems());
+      } else {
+        setHasMore(false);
+        setTotal(result.length);
+      }
       // 数据就绪后触发入场动画
       requestAnimationFrame(() => setReady(true));
     } catch (e) {
       console.error("Failed to load items:", e);
+    }
+  };
+
+  // 滞动加载下一页（仅全部视图）
+  const loadMore = async () => {
+    if (loadingMore() || !hasMore()) return;
+    if (keyword().length > 0 || activeTag()) return;
+    setLoadingMore(true);
+    try {
+      // offset 计入待删项，避免软删除造成错位
+      const offset = items().length + pendingDeletes().length;
+      const next = await getClipboardItems(PAGE_SIZE, offset);
+      if (next.length > 0) {
+        const existing = new Set(items().map((i) => i.id));
+        const merged = next.filter((i) => !existing.has(i.id));
+        setItems((prev) => [...prev, ...merged]);
+      }
+      setHasMore(next.length === PAGE_SIZE);
+    } catch (e) {
+      console.error("Failed to load more:", e);
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -303,7 +344,7 @@ function App() {
       <div class="titlebar" data-tauri-drag-region>
         <span class="titlebar-title">Clipboard Ultra</span>
         <div class="titlebar-right">
-          <span class="titlebar-count">{items().length} 条</span>
+          <span class="titlebar-count">{total()} 条</span>
           <button class="btn-theme" onClick={() => invoke("open_settings")} title="设置">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="3" />
@@ -335,6 +376,8 @@ function App() {
         onTogglePin={handleTogglePin}
         onDelete={handleDelete}
         onSetTag={handleSetTag}
+        hasMore={hasMore()}
+        onLoadMore={loadMore}
       />
     </div>
   );

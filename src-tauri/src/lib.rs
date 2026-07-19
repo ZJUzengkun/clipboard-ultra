@@ -123,6 +123,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_clipboard_items,
+            commands::count_items,
+            commands::get_pinned_items,
             commands::search_clipboard,
             commands::toggle_pin_item,
             commands::delete_clipboard_item,

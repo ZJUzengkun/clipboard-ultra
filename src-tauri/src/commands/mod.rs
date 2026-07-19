@@ -64,13 +64,29 @@ pub struct AppState {
     pub excluded_apps: Arc<RwLock<Vec<String>>>,
 }
 
-/// 获取剪贴板历史列表
+/// 获取剪贴板历史列表（支持分页）
 #[tauri::command]
 pub fn get_clipboard_items(
     state: State<AppState>,
     limit: Option<u32>,
+    offset: Option<u32>,
 ) -> Result<Vec<ClipboardItem>, String> {
-    state.db.get_recent(limit.unwrap_or(50))
+    state.db.get_recent(limit.unwrap_or(50), offset.unwrap_or(0))
+}
+
+/// 获取历史条目总数
+#[tauri::command]
+pub fn count_items(state: State<AppState>) -> Result<i64, String> {
+    state.db.count_items()
+}
+
+/// 获取收藏（置顶）条目列表
+#[tauri::command]
+pub fn get_pinned_items(
+    state: State<AppState>,
+    limit: Option<u32>,
+) -> Result<Vec<ClipboardItem>, String> {
+    state.db.get_pinned(limit.unwrap_or(200))
 }
 
 /// 搜索剪贴板历史
