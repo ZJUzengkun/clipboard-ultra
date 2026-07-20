@@ -1,4 +1,4 @@
-use crate::db::{operations::{ClipboardItem, TagRule}, Database};
+use crate::db::{operations::{ClipboardItem, TagRule, Board}, Database};
 use clipboard_rs::{common::RustImage, Clipboard, ClipboardContext};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -87,6 +87,58 @@ pub fn get_pinned_items(
     limit: Option<u32>,
 ) -> Result<Vec<ClipboardItem>, String> {
     state.db.get_pinned(limit.unwrap_or(200))
+}
+
+// ========== 收藏板（Boards）命令 ==========
+
+#[tauri::command]
+pub fn list_boards(state: State<AppState>) -> Result<Vec<Board>, String> {
+    state.db.list_boards()
+}
+
+#[tauri::command]
+pub fn create_board(state: State<AppState>, name: String, color: String) -> Result<Board, String> {
+    state.db.create_board(&name, &color)
+}
+
+#[tauri::command]
+pub fn rename_board(state: State<AppState>, id: i64, name: String) -> Result<(), String> {
+    state.db.rename_board(id, &name)
+}
+
+#[tauri::command]
+pub fn recolor_board(state: State<AppState>, id: i64, color: String) -> Result<(), String> {
+    state.db.recolor_board(id, &color)
+}
+
+#[tauri::command]
+pub fn delete_board(state: State<AppState>, id: i64) -> Result<(), String> {
+    state.db.delete_board(id)
+}
+
+#[tauri::command]
+pub fn reorder_boards(state: State<AppState>, ordered_ids: Vec<i64>) -> Result<(), String> {
+    state.db.reorder_boards(&ordered_ids)
+}
+
+#[tauri::command]
+pub fn add_item_to_board(state: State<AppState>, board_id: i64, item_id: i64) -> Result<(), String> {
+    state.db.add_item_to_board(board_id, item_id)
+}
+
+#[tauri::command]
+pub fn remove_item_from_board(state: State<AppState>, board_id: i64, item_id: i64) -> Result<(), String> {
+    state.db.remove_item_from_board(board_id, item_id)
+}
+
+#[tauri::command]
+pub fn get_board_ids_for_item(state: State<AppState>, item_id: i64) -> Result<Vec<i64>, String> {
+    state.db.get_board_ids_for_item(item_id)
+}
+
+#[tauri::command]
+pub fn get_items_in_board(state: State<AppState>, board_id: i64, limit: Option<u32>) -> Result<Vec<ClipboardItem>, String> {
+    state.db.get_items_in_board(board_id, limit.unwrap_or(200))
 }
 
 /// 搜索剪贴板历史

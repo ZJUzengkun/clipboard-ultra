@@ -30,6 +30,16 @@ pub struct TagRule {
     pub expire_days: i64,
 }
 
+/// 收藏板数据结构
+#[derive(Debug, Serialize, Clone)]
+pub struct Board {
+    pub id: i64,
+    pub name: String,
+    pub color: String,
+    pub sort_order: i64,
+    pub is_builtin: bool,
+}
+
 impl Database {
     /// 插入新文本，自动去重（相同内容置顶）
     pub fn insert_text(&self, content: &str) -> Result<(), String> {
@@ -241,7 +251,7 @@ impl Database {
         Ok(items)
     }
 
-    /// 切换收藏状态
+    /// 切换收藏状态（同步收藏板成员）
     pub fn toggle_pin(&self, id: i64) -> Result<bool, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
@@ -258,7 +268,33 @@ impl Database {
             )
             .map_err(|e| e.to_string())?;
 
+        // 同步内置"收藏"板成员：is_pinned 是其镜像
+        if let Some(fav_id) = Self::favorites_board_id(&conn) {
+            if is_pinned == 1 {
+                let now = Utc::now().timestamp();
+                let _ = conn.execute(
+                    "INSERT OR IGNORE INTO board_items (board_id, item_id, added_at) VALUES (?1, ?2, ?3)",
+                    rusqlite::params![fav_id, id, now],
+                );
+            } else {
+                let _ = conn.execute(
+                    "DELETE FROM board_items WHERE board_id = ?1 AND item_id = ?2",
+                    rusqlite::params![fav_id, id],
+                );
+            }
+        }
+
         Ok(is_pinned == 1)
+    }
+
+    /// 获取内置"收藏"板 id
+    fn favorites_board_id(conn: &rusqlite::Connection) -> Option<i64> {
+        conn.query_row(
+            "SELECT id FROM boards WHERE is_builtin = 1 ORDER BY id LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .ok()
     }
 
     /// 删除单条记录
@@ -301,7 +337,7 @@ impl Database {
 
         let count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM clipboard_items WHERE is_pinned = 0",
+                "SELECT COUNT(*) FROM clipboard_items WHERE id NOT IN (SELECT item_id FROM board_items)",
                 [],
                 |row| row.get(0),
             )
@@ -310,7 +346,7 @@ impl Database {
         if count > max_items {
             conn.execute(
                 "DELETE FROM clipboard_items WHERE id IN (
-                    SELECT id FROM clipboard_items WHERE is_pinned = 0
+                    SELECT id FROM clipboard_items WHERE id NOT IN (SELECT item_id FROM board_items)
                     ORDER BY updated_at ASC LIMIT ?1
                 )",
                 [count - max_items],
@@ -441,7 +477,7 @@ impl Database {
             let cutoff = now - expire_days * 86400;
             let deleted = conn
                 .execute(
-                    "DELETE FROM clipboard_items WHERE tag = ?1 AND is_pinned = 0 AND updated_at < ?2",
+                    "DELETE FROM clipboard_items WHERE tag = ?1 AND id NOT IN (SELECT item_id FROM board_items) AND updated_at < ?2",
                     rusqlite::params![tag_name, cutoff],
                 )
                 .map_err(|e| e.to_string())?;
@@ -470,7 +506,7 @@ impl Database {
                     let cutoff = now - expire * 86400;
                     let deleted = conn
                         .execute(
-                            "DELETE FROM clipboard_items WHERE tag IS NULL AND content_type = ?1 AND is_pinned = 0 AND updated_at < ?2",
+                            "DELETE FROM clipboard_items WHERE tag IS NULL AND content_type = ?1 AND id NOT IN (SELECT item_id FROM board_items) AND updated_at < ?2",
                             rusqlite::params![*ct, cutoff],
                         )
                         .map_err(|e| e.to_string())?;
@@ -497,7 +533,7 @@ impl Database {
                 // 没有任何类型单独配置，全部无标签条目用默认
                 let deleted = conn
                     .execute(
-                        "DELETE FROM clipboard_items WHERE tag IS NULL AND is_pinned = 0 AND updated_at < ?1",
+                        "DELETE FROM clipboard_items WHERE tag IS NULL AND id NOT IN (SELECT item_id FROM board_items) AND updated_at < ?1",
                         rusqlite::params![cutoff],
                     )
                     .map_err(|e| e.to_string())?;
@@ -506,7 +542,7 @@ impl Database {
                 // 只清理未单独配置的类型
                 let placeholders: Vec<String> = configured_types.iter().enumerate().map(|(i, _)| format!("?{}", i + 2)).collect();
                 let sql = format!(
-                    "DELETE FROM clipboard_items WHERE tag IS NULL AND content_type NOT IN ({}) AND is_pinned = 0 AND updated_at < ?1",
+                    "DELETE FROM clipboard_items WHERE tag IS NULL AND content_type NOT IN ({}) AND id NOT IN (SELECT item_id FROM board_items) AND updated_at < ?1",
                     placeholders.join(", ")
                 );
                 let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
@@ -566,6 +602,171 @@ impl Database {
             .filter_map(|r| r.ok())
             .collect();
 
+        Ok(items)
+    }
+
+    // ========== 收藏板（Boards）相关方法 ==========
+
+    /// 列出所有板（内置在前，同级按 sort_order）
+    pub fn list_boards(&self) -> Result<Vec<Board>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, name, color, sort_order, is_builtin FROM boards
+                 ORDER BY is_builtin DESC, sort_order ASC, id ASC",
+            )
+            .map_err(|e| e.to_string())?;
+        let boards = stmt
+            .query_map([], |row| {
+                Ok(Board {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    color: row.get(2)?,
+                    sort_order: row.get(3)?,
+                    is_builtin: row.get::<_, i32>(4)? == 1,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(boards)
+    }
+
+    /// 新建板（非内置）
+    pub fn create_board(&self, name: &str, color: &str) -> Result<Board, String> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err("板名称不能为空".to_string());
+        }
+        let now = Utc::now().timestamp();
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        // 新板排在末尾
+        let next_order: i64 = conn
+            .query_row("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM boards WHERE is_builtin = 0", [], |row| row.get(0))
+            .unwrap_or(1);
+        conn.execute(
+            "INSERT INTO boards (name, color, sort_order, is_builtin, created_at) VALUES (?1, ?2, ?3, 0, ?4)",
+            rusqlite::params![name, color, next_order, now],
+        )
+        .map_err(|e| e.to_string())?;
+        let id = conn.last_insert_rowid();
+        Ok(Board { id, name: name.to_string(), color: color.to_string(), sort_order: next_order, is_builtin: false })
+    }
+
+    /// 重命名板
+    pub fn rename_board(&self, id: i64, name: &str) -> Result<(), String> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err("板名称不能为空".to_string());
+        }
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute("UPDATE boards SET name = ?1 WHERE id = ?2 AND is_builtin = 0", rusqlite::params![name, id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// 修改板颜色
+    pub fn recolor_board(&self, id: i64, color: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute("UPDATE boards SET color = ?1 WHERE id = ?2", rusqlite::params![color, id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// 删除板（不删条目；内置板不可删）
+    pub fn delete_board(&self, id: i64) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM boards WHERE id = ?1 AND is_builtin = 0", [id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// 批量重排板顺序
+    pub fn reorder_boards(&self, ordered_ids: &[i64]) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        for (idx, id) in ordered_ids.iter().enumerate() {
+            conn.execute(
+                "UPDATE boards SET sort_order = ?1 WHERE id = ?2 AND is_builtin = 0",
+                rusqlite::params![idx as i64 + 1, id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    /// 将条目加入板；若为内置收藏板则同步 is_pinned
+    pub fn add_item_to_board(&self, board_id: i64, item_id: i64) -> Result<(), String> {
+        let now = Utc::now().timestamp();
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT OR IGNORE INTO board_items (board_id, item_id, added_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params![board_id, item_id, now],
+        )
+        .map_err(|e| e.to_string())?;
+        if Self::favorites_board_id(&conn) == Some(board_id) {
+            let _ = conn.execute("UPDATE clipboard_items SET is_pinned = 1 WHERE id = ?1", [item_id]);
+        }
+        Ok(())
+    }
+
+    /// 将条目移出板；若为内置收藏板则同步 is_pinned
+    pub fn remove_item_from_board(&self, board_id: i64, item_id: i64) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "DELETE FROM board_items WHERE board_id = ?1 AND item_id = ?2",
+            rusqlite::params![board_id, item_id],
+        )
+        .map_err(|e| e.to_string())?;
+        if Self::favorites_board_id(&conn) == Some(board_id) {
+            let _ = conn.execute("UPDATE clipboard_items SET is_pinned = 0 WHERE id = ?1", [item_id]);
+        }
+        Ok(())
+    }
+
+    /// 获取某条目所属的所有板 id
+    pub fn get_board_ids_for_item(&self, item_id: i64) -> Result<Vec<i64>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT board_id FROM board_items WHERE item_id = ?1")
+            .map_err(|e| e.to_string())?;
+        let ids = stmt
+            .query_map([item_id], |row| row.get(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(ids)
+    }
+
+    /// 获取板内条目（按使用时间倒序）
+    pub fn get_items_in_board(&self, board_id: i64, limit: u32) -> Result<Vec<ClipboardItem>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT c.id, c.content_type, c.content, c.content_hash, c.blob_path, c.tag, c.created_at, c.updated_at, c.is_pinned
+                 FROM clipboard_items c
+                 JOIN board_items b ON b.item_id = c.id
+                 WHERE b.board_id = ?1
+                 ORDER BY c.updated_at DESC
+                 LIMIT ?2",
+            )
+            .map_err(|e| e.to_string())?;
+        let items = stmt
+            .query_map(rusqlite::params![board_id, limit], |row| {
+                Ok(ClipboardItem {
+                    id: row.get(0)?,
+                    content_type: row.get(1)?,
+                    content: row.get(2)?,
+                    content_hash: row.get(3)?,
+                    blob_path: row.get(4)?,
+                    tag: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                    is_pinned: row.get::<_, i32>(8)? == 1,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(items)
     }
 }

@@ -2,11 +2,11 @@ import { createSignal, onMount, onCleanup, Show } from "solid-js";
 import SearchBar from "./components/SearchBar";
 import ClipboardList from "./components/ClipboardList";
 import TagBar from "./components/TagBar";
+import BoardBar from "./components/BoardBar";
 import { ClipboardItemData } from "./components/ClipboardItem";
 import {
   getClipboardItems,
   countItems,
-  getPinnedItems,
   searchClipboard,
   togglePinItem,
   deleteClipboardItem,
@@ -15,8 +15,17 @@ import {
   getTagRules,
   getItemsByTag,
   setItemTag,
+  listBoards,
+  createBoard,
+  getItemsInBoard,
+  addItemToBoard,
+  removeItemFromBoard,
+  renameBoard,
+  recolorBoard,
+  deleteBoard,
   TagRule,
   FilterTag,
+  Board,
 } from "./hooks/useClipboard";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
@@ -29,6 +38,7 @@ function App() {
   const [blobsDir, setBlobsDir] = createSignal("");
   const [activeTag, setActiveTag] = createSignal("");
   const [tagRules, setTagRules] = createSignal<TagRule[]>([]);
+  const [boards, setBoards] = createSignal<Board[]>([]);
   const [pendingDeletes, setPendingDeletes] = createSignal<ClipboardItemData[]>([]);
   const [ready, setReady] = createSignal(false);
   const [total, setTotal] = createSignal(0);
@@ -48,8 +58,8 @@ function App() {
   };
 
   const allTags = (): FilterTag[] => {
+    // 标签行只放筛选标签，板页签独立在顶部 BoardBar
     const systemTags: FilterTag[] = [
-      { name: "收藏", type: "pinned", value: "__pinned__", color: "#f5c518" },
       { name: "文字", type: "content_type", value: "text", color: "#50d0a0" },
       { name: "图片", type: "content_type", value: "image", color: "#7c6df0" },
     ];
@@ -62,6 +72,61 @@ function App() {
     return [...systemTags, ...ruleTags];
   };
 
+  // 新建板预设色盘（按现有板数轮换）
+  const BOARD_COLORS = ["#5aa9f0", "#f06d6d", "#50d0a0", "#f0a05a", "#7c6df0", "#e267c8"];
+
+  const loadBoards = async () => {
+    try {
+      setBoards(await listBoards());
+    } catch (e) {
+      console.error("Failed to load boards:", e);
+    }
+  };
+
+  const handleCreateBoard = async (name: string) => {
+    try {
+      const color = BOARD_COLORS[(boards().length - 1) % BOARD_COLORS.length];
+      const board = await createBoard(name, color);
+      await loadBoards();
+      // 新建后直接切到该板
+      handleSelectTag(`board:${board.id}`);
+    } catch (e) {
+      console.error("Failed to create board:", e);
+    }
+  };
+
+  const handleRenameBoard = async (boardId: number, name: string) => {
+    try {
+      await renameBoard(boardId, name);
+      await loadBoards();
+    } catch (e) {
+      console.error("Failed to rename board:", e);
+    }
+  };
+
+  const handleRecolorBoard = async (boardId: number, color: string) => {
+    try {
+      await recolorBoard(boardId, color);
+      await loadBoards();
+    } catch (e) {
+      console.error("Failed to recolor board:", e);
+    }
+  };
+
+  const handleDeleteBoard = async (boardId: number) => {
+    try {
+      await deleteBoard(boardId);
+      // 正在查看被删板时切回全部视图
+      if (activeTag() === `board:${boardId}`) {
+        setActiveTag("");
+      }
+      await loadBoards();
+      await loadItems();
+    } catch (e) {
+      console.error("Failed to delete board:", e);
+    }
+  };
+
   const loadItems = async () => {
     try {
       const k = keyword();
@@ -71,14 +136,17 @@ function App() {
       if (k.length > 0) {
         result = await searchClipboard(k);
       } else if (tagValue) {
-        const filterTag = allTags().find((t) => t.value === tagValue);
-        if (filterTag?.type === "pinned") {
-          result = await getPinnedItems(200);
-        } else if (filterTag?.type === "content_type") {
-          const all = await getClipboardItems(200);
-          result = all.filter((item) => item.content_type === filterTag.value);
+        if (tagValue.startsWith("board:")) {
+          // 板视图（板页签不在 allTags 中，直接按前缀判断）
+          result = await getItemsInBoard(parseInt(tagValue.slice(6), 10), 200);
         } else {
-          result = await getItemsByTag(tagValue, 50);
+          const filterTag = allTags().find((t) => t.value === tagValue);
+          if (filterTag?.type === "content_type") {
+            const all = await getClipboardItems(200);
+            result = all.filter((item) => item.content_type === filterTag.value);
+          } else {
+            result = await getItemsByTag(tagValue, 50);
+          }
         }
       } else {
         // 全部视图：分页加载首屏
@@ -140,6 +208,7 @@ function App() {
 
     loadItems();
     loadTagRules();
+    loadBoards();
 
     // 监听后端剪贴板更新事件（替代轮询）
     const unlistenClipboard = listen("clipboard-updated", () => {
@@ -164,6 +233,7 @@ function App() {
       // 先隐藏再加载，加载完触发入场
       setReady(false);
       loadItems();
+      loadBoards();
       // 自动聚焦搜索框
       requestAnimationFrame(() => {
         const input = document.querySelector(".search-bar input") as HTMLInputElement;
@@ -235,6 +305,20 @@ function App() {
     await loadItems();
   };
 
+  // 条目加入/移出收藏板；命中内置收藏板时后端会同步 is_pinned，刷新列表保持星标一致
+  const handleToggleBoard = async (itemId: number, boardId: number, add: boolean) => {
+    try {
+      if (add) {
+        await addItemToBoard(boardId, itemId);
+      } else {
+        await removeItemFromBoard(boardId, itemId);
+      }
+      await loadItems();
+    } catch (e) {
+      console.error("Failed to toggle board membership:", e);
+    }
+  };
+
   const handleDelete = (id: number) => {
     const item = items().find((i) => i.id === id);
     if (!item) return;
@@ -249,12 +333,9 @@ function App() {
     if (pending.length === 0) return;
     const restored = pending[pending.length - 1];
     setPendingDeletes((prev) => prev.slice(0, -1));
-    // 按排序规则插回正确位置
+    // 按使用时间倒序插回正确位置（收藏不再置顶）
     setItems((prev) =>
-      [...prev, restored].sort((a, b) => {
-        if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
-        return b.updated_at - a.updated_at;
-      })
+      [...prev, restored].sort((a, b) => b.updated_at - a.updated_at)
     );
   };
 
@@ -342,7 +423,15 @@ function App() {
   return (
     <div class={`app ${ready() ? "ready" : ""}`}>
       <div class="titlebar" data-tauri-drag-region>
-        <span class="titlebar-title">Clipboard Ultra</span>
+        <BoardBar
+          boards={boards()}
+          activeTag={activeTag()}
+          onSelectTag={handleSelectTag}
+          onCreateBoard={handleCreateBoard}
+          onRenameBoard={handleRenameBoard}
+          onRecolorBoard={handleRecolorBoard}
+          onDeleteBoard={handleDeleteBoard}
+        />
         <div class="titlebar-right">
           <span class="titlebar-count">{total()} 条</span>
           <button class="btn-theme" onClick={() => invoke("open_settings")} title="设置">
@@ -372,10 +461,12 @@ function App() {
         selectedIndex={selectedIndex()}
         blobsDir={blobsDir()}
         tagRules={tagRules()}
+        boards={boards()}
         onPaste={handlePaste}
         onTogglePin={handleTogglePin}
         onDelete={handleDelete}
         onSetTag={handleSetTag}
+        onToggleBoard={handleToggleBoard}
         hasMore={hasMore()}
         onLoadMore={loadMore}
       />

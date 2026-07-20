@@ -1,6 +1,6 @@
 import { Component, Show, For, createSignal } from "solid-js";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { TagRule } from "../hooks/useClipboard";
+import { TagRule, Board, getBoardIdsForItem } from "../hooks/useClipboard";
 
 export interface ClipboardItemData {
   id: number;
@@ -19,14 +19,43 @@ interface ClipboardItemProps {
   isSelected: boolean;
   blobsDir: string;
   tagRules: TagRule[];
+  boards: Board[];
   onPaste: (id: number) => void;
   onTogglePin: (id: number) => void;
   onDelete: (id: number) => void;
   onSetTag: (id: number, tag: string) => void;
+  onToggleBoard: (itemId: number, boardId: number, add: boolean) => void;
 }
 
 const ClipboardItem: Component<ClipboardItemProps> = (props) => {
   const [showTagMenu, setShowTagMenu] = createSignal(false);
+  const [showBoardMenu, setShowBoardMenu] = createSignal(false);
+  const [memberBoardIds, setMemberBoardIds] = createSignal<number[]>([]);
+
+  // 星标即归板入口：只有收藏夹一个板时直接切收藏；多板时弹选择菜单
+  const handleStarClick = (e: MouseEvent) => {
+    e.stopPropagation();
+    if (props.boards.length <= 1) {
+      props.onTogglePin(props.item.id);
+      setShowBoardMenu(false);
+    } else {
+      toggleBoardMenu();
+    }
+  };
+
+  // 打开板菜单时懒加载成员状态
+  const toggleBoardMenu = async () => {
+    const next = !showBoardMenu();
+    setShowBoardMenu(next);
+    setShowTagMenu(false);
+    if (next) {
+      try {
+        setMemberBoardIds(await getBoardIdsForItem(props.item.id));
+      } catch (e) {
+        console.error("Failed to load board membership:", e);
+      }
+    }
+  };
 
   const CONTENT_TYPE_MAP: Record<string, { name: string; color: string }> = {
     text: { name: "文字", color: "#50d0a0" },
@@ -181,6 +210,7 @@ const ClipboardItem: Component<ClipboardItemProps> = (props) => {
               onClick={(e) => {
                 e.stopPropagation();
                 setShowTagMenu(!showTagMenu());
+                setShowBoardMenu(false);
               }}
               title="打标签"
             >
@@ -224,18 +254,51 @@ const ClipboardItem: Component<ClipboardItemProps> = (props) => {
               </div>
             </Show>
           </div>
-          <button
-            class={`btn-action btn-pin ${props.item.is_pinned ? "active" : ""}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              props.onTogglePin(props.item.id);
-            }}
-            title={props.item.is_pinned ? "取消收藏" : "收藏"}
-          >
-            <svg viewBox="0 0 24 24" fill={props.item.is_pinned ? "currentColor" : "none"} stroke="currentColor" stroke-width="2">
-              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-            </svg>
-          </button>
+          <div class="tag-action-wrapper">
+            <button
+              class={`btn-action btn-pin ${props.item.is_pinned ? "active" : ""}`}
+              onClick={handleStarClick}
+              title={
+                props.boards.length > 1
+                  ? "加入板"
+                  : props.item.is_pinned
+                    ? "取消收藏"
+                    : "收藏"
+              }
+            >
+              <svg viewBox="0 0 24 24" fill={props.item.is_pinned ? "currentColor" : "none"} stroke="currentColor" stroke-width="2">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+            </button>
+            <Show when={showBoardMenu()}>
+              <div class="tag-menu">
+                <For each={props.boards}>
+                  {(board) => {
+                    const isMember = () => memberBoardIds().includes(board.id);
+                    return (
+                      <button
+                        class="tag-menu-item"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const add = !isMember();
+                          props.onToggleBoard(props.item.id, board.id, add);
+                          setMemberBoardIds((prev) =>
+                            add ? [...prev, board.id] : prev.filter((id) => id !== board.id)
+                          );
+                        }}
+                      >
+                        <span class="tag-dot" style={{ background: board.color }}></span>
+                        {board.name}
+                        <Show when={isMember()}>
+                          <span class="board-menu-check">✓</span>
+                        </Show>
+                      </button>
+                    );
+                  }}
+                </For>
+              </div>
+            </Show>
+          </div>
           <button
             class="btn-action btn-delete"
             onClick={(e) => {

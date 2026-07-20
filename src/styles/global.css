@@ -989,6 +989,56 @@ body {
   overflow-x: auto;
 }
 
+/* 顶部板页签区（嵌在标题栏内，仿 Paste：剪贴板 / 收藏夹 / 自建板 / +） */
+.board-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  margin-right: 12px;
+  overflow-x: auto;
+}
+
+.board-bar::-webkit-scrollbar {
+  height: 0;
+}
+
+.board-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--duration-fast);
+}
+
+.board-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.board-tab.active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.board-tab-add {
+  padding: 5px 10px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-secondary);
+}
+
 .tag-bar::-webkit-scrollbar {
   height: 0;
 }
@@ -1012,6 +1062,73 @@ body {
 .tag-chip:hover {
   background: var(--bg-hover);
   border-color: var(--border-active);
+}
+
+/* 新建收藏板按钮 */
+.tag-chip-add {
+  padding: 4px 12px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-tertiary, var(--text-secondary));
+}
+
+/* 板菜单已加入勾选标记 */
+.board-menu-check {
+  margin-left: auto;
+  color: var(--accent, #50d0a0);
+  font-weight: 700;
+}
+
+/* 板右键菜单 */
+.board-ctx-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 140px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.board-color-row {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+}
+
+.board-color-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform var(--duration-fast);
+}
+
+.board-color-swatch:hover {
+  transform: scale(1.2);
+}
+
+.board-color-swatch.active {
+  border-color: var(--text-primary);
+}
+
+/* 新建收藏板内联输入框 */
+.tag-new-input {
+  width: 90px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-active);
+  border-radius: 100px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  outline: none;
 }
 
 .tag-chip.active {

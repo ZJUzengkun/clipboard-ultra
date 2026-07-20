@@ -12,9 +12,19 @@ export interface TagRule {
 
 export interface FilterTag {
   name: string;       // 显示名称，如"图片"、"代码"
-  type: "content_type" | "rule" | "pinned";  // 标签来源
-  value: string;      // 筛选值：content_type 时为 "image"；rule 时为 tag name；pinned 时为 "__pinned__"
+  type: "content_type" | "rule" | "board";  // 标签来源
+  value: string;      // 筛选值：content_type 时为 "image"；rule 时为 tag name；board 时为 "board:{id}"
   color: string;      // 标签颜色
+  builtin?: boolean;  // board 类型：是否内置板（内置不可重命名/删除）
+}
+
+/// 收藏板数据结构
+export interface Board {
+  id: number;
+  name: string;
+  color: string;
+  sort_order: number;
+  is_builtin: boolean;
 }
 
 export async function getClipboardItems(limit?: number, offset?: number): Promise<ClipboardItemData[]> {
@@ -27,6 +37,44 @@ export async function countItems(): Promise<number> {
 
 export async function getPinnedItems(limit?: number): Promise<ClipboardItemData[]> {
   return invoke("get_pinned_items", { limit: limit || 200 });
+}
+
+// ========== 收藏板（Boards） ==========
+
+export async function listBoards(): Promise<Board[]> {
+  return invoke("list_boards");
+}
+
+export async function createBoard(name: string, color: string): Promise<Board> {
+  return invoke("create_board", { name, color });
+}
+
+export async function renameBoard(id: number, name: string): Promise<void> {
+  return invoke("rename_board", { id, name });
+}
+
+export async function recolorBoard(id: number, color: string): Promise<void> {
+  return invoke("recolor_board", { id, color });
+}
+
+export async function deleteBoard(id: number): Promise<void> {
+  return invoke("delete_board", { id });
+}
+
+export async function addItemToBoard(boardId: number, itemId: number): Promise<void> {
+  return invoke("add_item_to_board", { boardId, itemId });
+}
+
+export async function removeItemFromBoard(boardId: number, itemId: number): Promise<void> {
+  return invoke("remove_item_from_board", { boardId, itemId });
+}
+
+export async function getBoardIdsForItem(itemId: number): Promise<number[]> {
+  return invoke("get_board_ids_for_item", { itemId });
+}
+
+export async function getItemsInBoard(boardId: number, limit?: number): Promise<ClipboardItemData[]> {
+  return invoke("get_items_in_board", { boardId, limit: limit || 200 });
 }
 
 export async function searchClipboard(keyword: string): Promise<ClipboardItemData[]> {
