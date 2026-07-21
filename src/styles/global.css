@@ -1581,6 +1581,7 @@ body {
 
 .tag-rule-input {
   flex: 1;
+  min-width: 0; /* 允许收缩，避免与规则类型下拉同行时撑爆表单行 */
   padding: 10px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -1600,6 +1601,12 @@ body {
 .tag-rule-input.input-pattern {
   font-family: "JetBrains Mono", "SF Mono", monospace;
   font-size: 11px;
+}
+
+/* 规则类型下拉：固定紧凑宽度，不随最长选项撑开 */
+.rule-type-select {
+  flex: 0 0 auto;
+  width: 96px;
 }
 
 .tag-color-picker {
@@ -1774,6 +1781,58 @@ body {
   display: flex;
   flex-direction: column;
   gap: 28px;
+}
+
+/* ======== 设置页左侧分类导航 ======== */
+.settings-layout {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.settings-nav {
+  width: 148px;
+  flex-shrink: 0;
+  padding: 14px 10px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.settings-nav-item svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.settings-nav-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.settings-nav-item.active {
+  background: var(--accent);
+  color: #fff;
 }
 
 .settings-window-body::-webkit-scrollbar {
@@ -2044,4 +2103,83 @@ body {
   margin-top: 6px;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+/* ======== Cmd+1~9 快速粘贴数字角标 ======== */
+.clipboard-list {
+  counter-reset: quick-key;
+}
+
+.clipboard-item {
+  counter-increment: quick-key;
+}
+
+/* 按住 Cmd 时前 9 张卡片左上角显示对应数字（卡内侧，避免被列表 overflow 裁剪） */
+.app.show-quick-keys .clipboard-item:nth-child(-n + 9)::before {
+  content: counter(quick-key);
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 3;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: var(--shadow-card);
+  pointer-events: none;
+}
+
+/* ======== 智能卡片：颜色值 / 链接 ======== */
+.item-color {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 注意：.color-swatch 已被设置页调色盘占用，卡片色块用独立类名 */
+.item-color-swatch {
+  flex: 1;
+  min-height: 40px;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--border);
+}
+
+.color-value {
+  font-family: "JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code", monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: center;
+  word-break: break-all;
+}
+
+.item-url {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.url-domain {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.url-full {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  word-break: break-all;
+  overflow: hidden;
 }

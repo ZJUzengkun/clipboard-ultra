@@ -1,6 +1,7 @@
-import { Component, Show, For, createSignal } from "solid-js";
+import { Component, Show, For, createSignal, createMemo } from "solid-js";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { TagRule, Board, getBoardIdsForItem } from "../hooks/useClipboard";
+import { detectKind, extractDomain } from "../contentKind";
 
 export interface ClipboardItemData {
   id: number;
@@ -122,6 +123,15 @@ const ClipboardItem: Component<ClipboardItemProps> = (props) => {
       return "linear-gradient(135deg, #0891b2 0%, #06b6d4 100%)";
     }
   
+    // 颜色值卡片 → header 直接用该颜色（hex 时限制亮度保证白字可读，其他格式走默认色板）
+    if (kind() === "color") {
+      const val = props.item.content.trim();
+      if (val.startsWith("#") && (val.length === 7 || val.length === 9)) {
+        const { h, s, l } = hexToHsl(val);
+        return `linear-gradient(135deg, hsl(${h}, ${s}%, ${Math.min(l, 55)}%) 0%, hsl(${h}, ${s}%, ${Math.min(l + 8, 62)}%) 100%)`;
+      }
+    }
+
     // 纯文字 → 根据 content_hash 轮选色板
     const hash = props.item.content_hash || props.item.content;
     let hashNum = 0;
@@ -157,6 +167,9 @@ const ClipboardItem: Component<ClipboardItemProps> = (props) => {
 
   const isImage = () => props.item.content_type === "image";
 
+  // 内容形态（颜色/链接/普通文本）：渲染时现算，content 不可变故 memo 一次
+  const kind = createMemo(() => (isImage() ? "text" : detectKind(props.item.content)));
+
   const thumbSrc = () => {
     if (!isImage() || !props.item.blob_path || !props.blobsDir) return "";
     const thumbName = props.item.blob_path.replace(".png", "_thumb.png");
@@ -188,7 +201,21 @@ const ClipboardItem: Component<ClipboardItemProps> = (props) => {
 
       {/* Content */}
       <div class="item-content">
-        <Show when={isImage()} fallback={<pre>{truncate(props.item.content)}</pre>}>
+        <Show when={isImage()} fallback={
+          <Show when={kind() === "color"} fallback={
+            <Show when={kind() === "url"} fallback={<pre>{truncate(props.item.content)}</pre>}>
+              <div class="item-url">
+                <span class="url-domain">{extractDomain(props.item.content)}</span>
+                <span class="url-full">{truncate(props.item.content.trim(), 90)}</span>
+              </div>
+            </Show>
+          }>
+            <div class="item-color">
+              <div class="item-color-swatch" style={{ background: props.item.content.trim() }}></div>
+              <span class="color-value">{props.item.content.trim()}</span>
+            </div>
+          </Show>
+        }>
           <div class="item-image">
             <img src={thumbSrc()} alt="clipboard image" loading="lazy" />
           </div>

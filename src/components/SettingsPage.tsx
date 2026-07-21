@@ -7,6 +7,19 @@ import { getVersion } from "@tauri-apps/api/app";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 
+// 内置检测器：pattern 存 "builtin:xxx"，Rust 端用解析器/校验位算法检测，比正则更准
+const BUILTIN_DETECTORS: { value: string; label: string; desc: string }[] = [
+  { value: "builtin:json", label: "JSON", desc: "JSON 语法校验" },
+  { value: "builtin:url", label: "链接", desc: "URL 解析校验" },
+  { value: "builtin:bankcard", label: "银行卡", desc: "Luhn 校验位" },
+  { value: "builtin:idcard", label: "身份证", desc: "加权校验码" },
+];
+
+const builtinLabel = (pattern: string) => {
+  const d = BUILTIN_DETECTORS.find((d) => d.value === pattern);
+  return d ? `内置检测 · ${d.desc}` : pattern;
+};
+
 const SettingsPage: Component = () => {
   const [currentShortcut, setCurrentShortcut] = createSignal("");
   const [recording, setRecording] = createSignal(false);
@@ -15,10 +28,25 @@ const SettingsPage: Component = () => {
   const [error, setError] = createSignal("");
   const [success, setSuccess] = createSignal("");
 
+  // 设置分类导航：左侧边栏当前选中项
+  const [activeTab, setActiveTab] = createSignal("appearance");
+
+  // 导航分类（图标与各区块标题一致）
+  const navItems = [
+    { id: "appearance", label: "外观", icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="13.5" cy="6.5" r=".5" /><circle cx="17.5" cy="10.5" r=".5" /><circle cx="8.5" cy="7.5" r=".5" /><circle cx="6.5" cy="12.5" r=".5" /><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" /></svg> },
+    { id: "hotkey", label: "快捷键", icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M8 16h8" /></svg> },
+    { id: "tags", label: "标签规则", icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg> },
+    { id: "privacy", label: "隐私", icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg> },
+    { id: "data", label: "数据管理", icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> },
+    { id: "about", label: "关于与更新", icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg> },
+  ];
+
   // 标签规则状态
   const [rules, setRules] = createSignal<TagRule[]>([]);
   const [newRuleName, setNewRuleName] = createSignal("");
   const [newRulePattern, setNewRulePattern] = createSignal("");
+  // 规则类型：regex = 手写正则（含留空手动标签），其余为内置检测器的 builtin:xxx
+  const [newRuleType, setNewRuleType] = createSignal("regex");
   const [newRuleColor, setNewRuleColor] = createSignal("#7c6df0");
   const [ruleError, setRuleError] = createSignal("");
 
@@ -183,13 +211,14 @@ const SettingsPage: Component = () => {
 
   const handleAddRule = async () => {
     const name = newRuleName().trim();
-    const pattern = newRulePattern().trim();
+    const isBuiltin = newRuleType() !== "regex";
+    const pattern = isBuiltin ? newRuleType() : newRulePattern().trim();
     if (!name) {
       setRuleError("标签名称不能为空");
       return;
     }
-    // 正则选填：留空则为手动标签；填了才校验合法性
-    if (pattern) {
+    // 正则选填：留空则为手动标签；填了才校验合法性（内置检测器无需校验）
+    if (!isBuiltin && pattern) {
       try {
         new RegExp(pattern);
       } catch {
@@ -204,6 +233,7 @@ const SettingsPage: Component = () => {
       setRules(updated);
       setNewRuleName("");
       setNewRulePattern("");
+      setNewRuleType("regex");
       setNewRuleColor("#7c6df0");
       setNewRuleExpire(0);
       notifyMainWindow();
@@ -382,8 +412,25 @@ const SettingsPage: Component = () => {
         <div class="settings-titlebar-right" />
       </div>
 
+      <div class="settings-layout">
+        {/* 左侧分类导航 */}
+        <nav class="settings-nav">
+          <For each={navItems}>
+            {(item) => (
+              <button
+                class={`settings-nav-item ${activeTab() === item.id ? "active" : ""}`}
+                onClick={() => setActiveTab(item.id)}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </button>
+            )}
+          </For>
+        </nav>
+
       <div class="settings-window-body">
-        {/* 快捷键区域 */}
+        {/* 外观区域 */}
+        <Show when={activeTab() === "appearance"}>
         <section class="settings-section">
           <div class="section-title">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="section-icon">
@@ -425,7 +472,10 @@ const SettingsPage: Component = () => {
             </For>
           </div>
         </section>
+        </Show>
 
+        {/* 快捷键区域 */}
+        <Show when={activeTab() === "hotkey"}>
         <section class="settings-section">
           <div class="section-title">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="section-icon">
@@ -491,8 +541,10 @@ const SettingsPage: Component = () => {
             </button>
           </div>
         </section>
+        </Show>
 
         {/* 标签规则区域 */}
+        <Show when={activeTab() === "tags"}>
         <section class="settings-section">
           <div class="section-title">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="section-icon">
@@ -513,7 +565,7 @@ const SettingsPage: Component = () => {
                     <div class="tag-rule-info">
                       <span class="tag-rule-name">{rule.name}</span>
                       <Show when={rule.pattern} fallback={<span class="tag-rule-manual">手动打标签</span>}>
-                        <code class="tag-rule-pattern">{rule.pattern}</code>
+                        <code class="tag-rule-pattern">{rule.pattern.startsWith("builtin:") ? builtinLabel(rule.pattern) : rule.pattern}</code>
                       </Show>
                     </div>
                     <select
@@ -557,13 +609,34 @@ const SettingsPage: Component = () => {
                 onInput={(e) => setNewRuleName(e.currentTarget.value)}
                 class="tag-rule-input"
               />
-              <input
-                type="text"
-                placeholder="正则表达式（留空=手动标签）"
-                value={newRulePattern()}
-                onInput={(e) => setNewRulePattern(e.currentTarget.value)}
-                class="tag-rule-input input-pattern"
-              />
+              {/* 规则类型：手写正则 or 内置检测器；选内置时隐藏正则输入框 */}
+              <select
+                class="expire-select rule-type-select"
+                value={newRuleType()}
+                onChange={(e) => {
+                  const v = e.currentTarget.value;
+                  setNewRuleType(v);
+                  // 选内置检测器时，名称为空则自动带出默认名
+                  if (v !== "regex" && !newRuleName().trim()) {
+                    const d = BUILTIN_DETECTORS.find((d) => d.value === v);
+                    if (d) setNewRuleName(d.label);
+                  }
+                }}
+              >
+                <option value="regex">正则</option>
+                <For each={BUILTIN_DETECTORS}>
+                  {(d) => <option value={d.value}>{d.label}</option>}
+                </For>
+              </select>
+              <Show when={newRuleType() === "regex"}>
+                <input
+                  type="text"
+                  placeholder="正则表达式（留空=手动标签）"
+                  value={newRulePattern()}
+                  onInput={(e) => setNewRulePattern(e.currentTarget.value)}
+                  class="tag-rule-input input-pattern"
+                />
+              </Show>
             </div>
 
             <div class="form-row form-row-between">
@@ -612,8 +685,10 @@ const SettingsPage: Component = () => {
             <p class="settings-error">{ruleError()}</p>
           </Show>
         </section>
+        </Show>
 
         {/* 排除应用区域 */}
+        <Show when={activeTab() === "privacy"}>
         <section class="settings-section">
           <div class="section-title">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="section-icon">
@@ -691,8 +766,10 @@ const SettingsPage: Component = () => {
             </div>
           </Show>
         </section>
+        </Show>
 
         {/* 数据管理区域 */}
+        <Show when={activeTab() === "data"}>
         <section class="settings-section">
           <div class="section-title">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="section-icon">
@@ -785,8 +862,10 @@ const SettingsPage: Component = () => {
             <p class="data-mgmt-note">置顶条目永不过期，有标签的条目按标签规则配置过期</p>
           </div>
         </section>
+        </Show>
 
         {/* 关于与更新区域 */}
+        <Show when={activeTab() === "about"}>
         <section class="settings-section">
           <div class="section-title">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="section-icon">
@@ -833,6 +912,8 @@ const SettingsPage: Component = () => {
             </Show>
           </div>
         </section>
+        </Show>
+      </div>
       </div>
     </div>
   );

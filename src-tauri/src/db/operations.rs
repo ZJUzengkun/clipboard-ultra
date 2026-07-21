@@ -370,13 +370,22 @@ impl Database {
             .filter_map(|r| r.ok())
             .collect();
 
+        let trimmed = content.trim();
         for (name, pattern) in rules {
             // 空正则表示手动标签，不参与自动匹配（空正则会匹配一切，必须跳过）
             if pattern.is_empty() {
                 continue;
             }
-            if let Ok(re) = Regex::new(&pattern) {
-                if re.is_match(content) {
+            // builtin: 前缀走内置检测器（解析器/校验位算法，比正则更准）
+            if let Some(kind) = pattern.strip_prefix("builtin:") {
+                if builtin_detect(kind, trimmed) {
+                    return Some(name);
+                }
+                continue;
+            }
+            // 全串匹配：内容整体命中正则才打标，避免 JSON 等长文本因包含邮箱片段被误标
+            if let Ok(re) = Regex::new(&format!("^(?:{})$", pattern)) {
+                if re.is_match(trimmed) {
                     return Some(name);
                 }
             }
@@ -769,4 +778,67 @@ impl Database {
             .collect();
         Ok(items)
     }
+}
+
+// ========== 内置检测器（标签规则 pattern = "builtin:xxx" 时走这里，比正则更准） ==========
+
+/// 按标识分发到对应检测器，未知标识返回 false
+fn builtin_detect(kind: &str, content: &str) -> bool {
+    match kind {
+        // JSON：真正的语法校验，且限定对象/数组（裸数字、字符串也是合法 JSON，但打标无意义）
+        "json" => {
+            (content.starts_with('{') || content.starts_with('['))
+                && serde_json::from_str::<serde_json::Value>(content).is_ok()
+        }
+        // URL：标准解析器校验，仅限 http/https 且单行
+        "url" => {
+            !content.contains(char::is_whitespace)
+                && url::Url::parse(content)
+                    .map(|u| matches!(u.scheme(), "http" | "https"))
+                    .unwrap_or(false)
+        }
+        "bankcard" => luhn_check(content),
+        "idcard" => idcard_check(content),
+        _ => false,
+    }
+}
+
+/// Luhn 校验：银行卡号（12-19 位数字，允许空格/连字符分隔）
+fn luhn_check(s: &str) -> bool {
+    let cleaned: String = s.chars().filter(|c| !c.is_whitespace() && *c != '-').collect();
+    if cleaned.len() < 12 || cleaned.len() > 19 || !cleaned.chars().all(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    let sum: u32 = cleaned
+        .chars()
+        .rev()
+        .enumerate()
+        .map(|(i, c)| {
+            let mut d = c.to_digit(10).unwrap();
+            if i % 2 == 1 {
+                d *= 2;
+                if d > 9 {
+                    d -= 9;
+                }
+            }
+            d
+        })
+        .sum();
+    sum % 10 == 0
+}
+
+/// 身份证校验：18 位，末位为加权校验码（GB 11643）
+fn idcard_check(s: &str) -> bool {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() != 18 || !chars[..17].iter().all(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    const WEIGHTS: [u32; 17] = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2];
+    const CODES: [char; 11] = ['1', '0', 'X', '9', '8', '7', '6', '5', '4', '3', '2'];
+    let sum: u32 = chars[..17]
+        .iter()
+        .zip(WEIGHTS)
+        .map(|(c, w)| c.to_digit(10).unwrap() * w)
+        .sum();
+    chars[17].to_ascii_uppercase() == CODES[(sum % 11) as usize]
 }

@@ -32,6 +32,11 @@ import { listen, emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { themeOf, getStoredChoice, resolveThemeId, applyChoice, saveChoice, lastThemeIdFor } from "./theme";
 
+// 平台修饰键：macOS 只认 ⌘，Windows/Linux 只认 Ctrl（避免跨平台串键）
+const IS_WINDOWS = navigator.userAgent.includes("Windows");
+const MOD_KEY = IS_WINDOWS ? "Control" : "Meta";
+const isModPressed = (e: KeyboardEvent) => (IS_WINDOWS ? e.ctrlKey : e.metaKey);
+
 function App() {
   const [items, setItems] = createSignal<ClipboardItemData[]>([]);
   const [keyword, setKeyword] = createSignal("");
@@ -407,23 +412,40 @@ function App() {
     hiding = false;
   };
 
+  // 按住修饰键（⌘/Ctrl）时前 9 张卡片显示数字角标（配合 ⌘/Ctrl+1~9 快速粘贴）
+  const [cmdHeld, setCmdHeld] = createSignal(false);
+
   // 键盘导航（左右方向键切换卡片）
   const handleKeyDown = (e: KeyboardEvent) => {
-    // Ctrl/Cmd+Z 撤销删除
-    if (e.key === "z" && (e.ctrlKey || e.metaKey)) {
+    if (e.key === MOD_KEY) {
+      setCmdHeld(true);
+    }
+
+    // ⌘/Ctrl+Z 撤销删除
+    if (e.key === "z" && isModPressed(e)) {
       e.preventDefault();
       handleUndo();
       return;
     }
 
-    // Cmd+, 打开设置（macOS 惯例）
-    if (e.key === "," && (e.ctrlKey || e.metaKey)) {
+    // ⌘/Ctrl+, 打开设置
+    if (e.key === "," && isModPressed(e)) {
       e.preventDefault();
       invoke("open_settings");
       return;
     }
 
     const list = items();
+
+    // ⌘/Ctrl+1~9 快速粘贴对应位置的卡片
+    if (isModPressed(e) && e.key >= "1" && e.key <= "9") {
+      e.preventDefault();
+      const target = list[Number(e.key) - 1];
+      if (target) {
+        handlePaste(target.id);
+      }
+      return;
+    }
     switch (e.key) {
       case "ArrowRight":
       case "ArrowDown":
@@ -469,16 +491,26 @@ function App() {
     });
   };
 
+  // 修饰键释放或窗口失焦时收起数字角标（隐藏窗口会丢 keyup，需兜底）
+  const handleKeyUp = (e: KeyboardEvent) => {
+    if (e.key === MOD_KEY) setCmdHeld(false);
+  };
+  const handleWindowBlur = () => setCmdHeld(false);
+
   onMount(() => {
     document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleWindowBlur);
   });
 
   onCleanup(() => {
     document.removeEventListener("keydown", handleKeyDown);
+    document.removeEventListener("keyup", handleKeyUp);
+    window.removeEventListener("blur", handleWindowBlur);
   });
 
   return (
-    <div class={`app ${ready() ? "ready" : ""}`}>
+    <div class={`app ${ready() ? "ready" : ""} ${cmdHeld() ? "show-quick-keys" : ""}`}>
       <div class="titlebar" data-tauri-drag-region>
         <BoardBar
           boards={boards()}

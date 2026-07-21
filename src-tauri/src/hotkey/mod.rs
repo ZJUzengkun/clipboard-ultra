@@ -15,22 +15,22 @@ fn get_frontmost_app_bundle_id() -> Option<String> {
 fn position_at_bottom(window: &tauri::WebviewWindow) {
     if let Ok(monitor) = window.current_monitor() {
         if let Some(monitor) = monitor {
-            let screen_size = monitor.size();
-            let screen_pos = monitor.position();
+            // 用工作区域而非全屏尺寸：自动扣除 Windows 任务栏 / macOS Dock，避免面板底部被遮挡
+            let work_area = monitor.work_area();
             let scale = monitor.scale_factor();
 
-            let screen_w = screen_size.width as f64 / scale;
-            let screen_h = screen_size.height as f64 / scale;
-            let offset_x = screen_pos.x as f64 / scale;
-            let offset_y = screen_pos.y as f64 / scale;
+            let screen_w = work_area.size.width as f64 / scale;
+            let screen_h = work_area.size.height as f64 / scale;
+            let offset_x = work_area.position.x as f64 / scale;
+            let offset_y = work_area.position.y as f64 / scale;
 
             let panel_height = 360.0;
             let dock_margin = 5.0;
 
-            // 设置窗口大小为屏幕宽度 × 面板高度
+            // 设置窗口大小为工作区宽度 × 面板高度
             let _ = window.set_size(tauri::LogicalSize::new(screen_w, panel_height));
 
-            // 定位到屏幕最底部（留一点间距给 Dock）
+            // 定位到工作区最底部（留一点间距）
             let x = offset_x;
             let y = offset_y + screen_h - panel_height - dock_margin;
 
