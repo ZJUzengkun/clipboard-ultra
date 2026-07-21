@@ -28,8 +28,9 @@ import {
   Board,
 } from "./hooks/useClipboard";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { listen } from "@tauri-apps/api/event";
+import { listen, emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { themeOf, getStoredChoice, resolveThemeId, applyChoice, saveChoice, lastThemeIdFor } from "./theme";
 
 function App() {
   const [items, setItems] = createSignal<ClipboardItemData[]>([]);
@@ -45,16 +46,16 @@ function App() {
   const [hasMore, setHasMore] = createSignal(false);
   const [loadingMore, setLoadingMore] = createSignal(false);
   const PAGE_SIZE = 50;
-  const [theme, setTheme] = createSignal<"dark" | "light">(
-    window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"
-  );
+  const [themeId, setThemeId] = createSignal(resolveThemeId(getStoredChoice()));
+  const themeMode = () => themeOf(themeId()).mode;
 
   let refreshInterval: number;
 
+  // 顶栏快切：在暗/亮两组的最近使用主题间切换
   const toggleTheme = () => {
-    const next = theme() === "dark" ? "light" : "dark";
-    setTheme(next);
-    document.documentElement.setAttribute("data-theme", next);
+    const next = lastThemeIdFor(themeMode() === "dark" ? "light" : "dark");
+    setThemeId(saveChoice(next).id);
+    emit("theme-changed", next);
   };
 
   const allTags = (): FilterTag[] => {
@@ -127,7 +128,7 @@ function App() {
     }
   };
 
-  const loadItems = async () => {
+  const loadItems = async (markReady = true) => {
     try {
       const k = keyword();
       const tagValue = activeTag();
@@ -161,8 +162,8 @@ function App() {
         setHasMore(false);
         setTotal(result.length);
       }
-      // 数据就绪后触发入场动画
-      requestAnimationFrame(() => setReady(true));
+      // 数据就绪后触发入场（隐藏时后台预载不触发，留给唤起时播滑入动画）
+      if (markReady) requestAnimationFrame(() => setReady(true));
     } catch (e) {
       console.error("Failed to load items:", e);
     }
@@ -201,18 +202,18 @@ function App() {
 
   onMount(() => {
     // 初始化主题
-    document.documentElement.setAttribute("data-theme", theme());
+    setThemeId(applyChoice(getStoredChoice()).id);
 
     // 获取 blobs 目录路径
     getBlobsDir().then(setBlobsDir).catch(console.error);
 
-    loadItems();
+    loadItems(false); // 启动时窗口隐藏，不点亮入场态，留给首次唤起播动画
     loadTagRules();
     loadBoards();
 
-    // 监听后端剪贴板更新事件（替代轮询）
+    // 监听后端剪贴板更新事件（替代轮询；隐藏时也会触发，不动入场态）
     const unlistenClipboard = listen("clipboard-updated", () => {
-      loadItems();
+      loadItems(false);
     });
 
     // 监听设置窗口发来的标签规则变更事件
@@ -220,20 +221,37 @@ function App() {
       loadTagRules();
     });
 
-    // 窗口获得焦点时也刷新一次，确保数据最新
+    // 监听设置窗口发来的主题变更事件
+    const unlistenTheme = listen<string>("theme-changed", (e) => {
+      setThemeId(applyChoice(e.payload).id);
+    });
+
+    // 监听热键再次触发的收起请求（Rust 侧不直接 hide，由前端播完滑出动画再隐藏）
+    const unlistenDismiss = listen("panel-dismiss", () => {
+      dismissPanel();
+    });
+
+    // 窗口获得焦点时只聚焦搜索框；视图已在隐藏时后台预备好，避免展示后重载闪烁
     const appWindow = getCurrentWindow();
     let showTimestamp = 0;
 
     const unlistenShow = appWindow.listen("tauri://focus", () => {
       showTimestamp = Date.now();
-      // 重置搜索状态
-      setKeyword("");
-      setActiveTag("");
-      setSelectedIndex(0);
-      // 先隐藏再加载，加载完触发入场
-      setReady(false);
-      loadItems();
-      loadBoards();
+      // 播放从底部滑入的入场动画。用 WAAPI 而非 CSS transition：
+      // 隐藏窗口恢复渲染时 transition 起始态从未呈现过，会被折叠成跳变；
+      // WAAPI 动画的 startTime 在渲染恢复后才分配，保证完整播放
+      if (!ready()) {
+        requestAnimationFrame(() => {
+          setReady(true);
+          const app = document.querySelector(".app");
+          if (app) {
+            app.animate(
+              [{ transform: "translateY(100%)" }, { transform: "translateY(0)" }],
+              { duration: 200, easing: "cubic-bezier(0.32, 0.72, 0.28, 1)" }
+            );
+          }
+        });
+      }
       // 自动聚焦搜索框
       requestAnimationFrame(() => {
         const input = document.querySelector(".search-bar input") as HTMLInputElement;
@@ -246,8 +264,7 @@ function App() {
         // 如果窗口刚获得焦点不到 300ms，不要隐藏（防止闪屏）
         const elapsed = Date.now() - showTimestamp;
         if (elapsed > 300) {
-          commitDeletes();
-          appWindow.hide();
+          dismissPanel();
         }
       }
     });
@@ -257,14 +274,16 @@ function App() {
       unlistenShow.then((fn) => fn());
       unlistenClipboard.then((fn) => fn());
       unlistenTagRules.then((fn) => fn());
+      unlistenTheme.then((fn) => fn());
+      unlistenDismiss.then((fn) => fn());
     });
 
-    // 监听系统主题变化
+    // 跟随系统时响应系统外观变化
     const mediaQuery = window.matchMedia("(prefers-color-scheme: light)");
-    const handleThemeChange = (e: MediaQueryListEvent) => {
-      const newTheme = e.matches ? "light" : "dark";
-      setTheme(newTheme);
-      document.documentElement.setAttribute("data-theme", newTheme);
+    const handleThemeChange = () => {
+      if (getStoredChoice() === "system") {
+        setThemeId(applyChoice("system").id);
+      }
     };
     mediaQuery.addEventListener("change", handleThemeChange);
     onCleanup(() => mediaQuery.removeEventListener("change", handleThemeChange));
@@ -294,10 +313,14 @@ function App() {
   };
 
   const handlePaste = async (id: number) => {
+    if (hiding) return;
+    hiding = true;
+    // 先播滑出动画再触发粘贴（Rust 侧会隐藏窗口并恢复焦点粘贴）
+    const anim = await playSlideOut();
     await pasteItem(id);
-    // 粘贴后自动隐藏面板，落库待删项
-    commitDeletes();
-    getCurrentWindow().hide();
+    anim?.cancel();
+    await resetViewAfterHide();
+    hiding = false;
   };
 
   const handleTogglePin = async (id: number) => {
@@ -349,6 +372,41 @@ function App() {
     setPendingDeletes([]);
   };
 
+  // 隐藏后后台重置视图：复位入场动画 → 落库待删项 → 清搜索/筛选 → 预加载最新数据
+  const resetViewAfterHide = async () => {
+    setReady(false);
+    await commitDeletes();
+    setKeyword("");
+    setActiveTag("");
+    setSelectedIndex(0);
+    await loadItems(false);
+    loadBoards();
+  };
+
+  // 滑出动画（WAAPI，理由同入场：CSS transition 在隐藏/恢复时不可靠）
+  const playSlideOut = async () => {
+    const app = document.querySelector(".app");
+    if (!app) return undefined;
+    const anim = app.animate(
+      [{ transform: "translateY(0)" }, { transform: "translateY(100%)" }],
+      { duration: 140, easing: "cubic-bezier(0.4, 0, 1, 1)", fill: "forwards" }
+    );
+    await anim.finished.catch(() => {});
+    return anim;
+  };
+
+  // 统一收起流程：滑出动画 → 隐藏窗口 → 后台重置视图（hiding 防多路径重入）
+  let hiding = false;
+  const dismissPanel = async () => {
+    if (hiding) return;
+    hiding = true;
+    const anim = await playSlideOut();
+    await getCurrentWindow().hide();
+    anim?.cancel();
+    await resetViewAfterHide();
+    hiding = false;
+  };
+
   // 键盘导航（左右方向键切换卡片）
   const handleKeyDown = (e: KeyboardEvent) => {
     // Ctrl/Cmd+Z 撤销删除
@@ -397,8 +455,7 @@ function App() {
         }
         break;
       case "Escape":
-        commitDeletes();
-        getCurrentWindow().hide();
+        dismissPanel();
         break;
     }
   };
@@ -441,7 +498,7 @@ function App() {
             </svg>
           </button>
           <button class="btn-theme" onClick={toggleTheme} title="切换主题">
-            {theme() === "dark" ? (
+            {themeMode() === "dark" ? (
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="5" />
                 <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />

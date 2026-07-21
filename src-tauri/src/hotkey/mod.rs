@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 /// 默认快捷键
@@ -49,7 +49,8 @@ pub fn register_shortcuts(app: &AppHandle) -> Result<(), Box<dyn std::error::Err
                 if event.state() == ShortcutState::Pressed {
                     if let Some(window) = app.get_webview_window("main") {
                         if window.is_visible().unwrap_or(false) {
-                            let _ = window.hide();
+                            // 不直接 hide：通知前端播完滑出动画后自行隐藏
+                            let _ = window.emit("panel-dismiss", ());
                         } else {
                             // macOS: 记录当前前台应用，粘贴时恢复焦点
                             #[cfg(target_os = "macos")]

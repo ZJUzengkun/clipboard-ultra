@@ -4,9 +4,28 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>偏好设置 - Clipboard Ultra</title>
+    <script>
+      // 首帧应用已保存主题，避免闪烁（与 src/theme.ts 的 localStorage 约定一致）
+      (function () {
+        try {
+          var choice = localStorage.getItem("cu-theme") || "system";
+          var id, mode;
+          if (choice === "system") {
+            mode = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+            id = localStorage.getItem(mode === "light" ? "cu-last-light" : "cu-last-dark") || mode;
+          } else {
+            id = choice;
+            var cache = (localStorage.getItem("cu-theme-cache") || "").split("|");
+            mode = cache[0] === choice && cache[1] ? cache[1] : "dark";
+          }
+          document.documentElement.setAttribute("data-theme", id);
+          document.documentElement.setAttribute("data-mode", mode);
+        } catch (e) {}
+      })();
+    </script>
   </head>
 
-  <body style="background: #16161e; color: #eae9fc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;">
+  <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;">
     <div id="root"></div>
     <div id="debug-errors" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:#1e1e2e; color:#f06070; padding:24px; font-size:13px; overflow:auto; white-space:pre-wrap; z-index:99999;"></div>
     <script>

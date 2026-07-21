@@ -1,7 +1,8 @@
 import { Component, createSignal, onMount, onCleanup, Show, For } from "solid-js";
 import { getShortcut, setShortcut, getTagRules, addTagRule, deleteTagRule, updateTagRuleExpire, getDefaultExpireDays, setDefaultExpireDays, getContentTypeExpireDays, setContentTypeExpireDays, getMaxItems, setMaxItems, TagRule, getExcludedApps, getExcludedAppsNames, addExcludedApp, removeExcludedApp, getRunningApps, RunningApp } from "../hooks/useClipboard";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { emit } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
+import { THEMES, getStoredChoice, applyChoice, saveChoice } from "../theme";
 import { getVersion } from "@tauri-apps/api/app";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -47,6 +48,15 @@ const SettingsPage: Component = () => {
   const [downloadProgress, setDownloadProgress] = createSignal(0);
   let pendingUpdate: Awaited<ReturnType<typeof check>> = null;
 
+  // 主题选择（"system" 或主题 id）
+  const [themeChoice, setThemeChoice] = createSignal(getStoredChoice());
+
+  const selectTheme = (choice: string) => {
+    setThemeChoice(choice);
+    saveChoice(choice);
+    emit("theme-changed", choice);
+  };
+
   const expireOptions = [
     { value: 0, label: "永不过期" },
     { value: 1, label: "1 天" },
@@ -58,9 +68,15 @@ const SettingsPage: Component = () => {
   ];
 
   onMount(async () => {
-    // 初始化主题跟随系统
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    document.documentElement.setAttribute("data-theme", prefersDark ? "dark" : "light");
+    // 应用已保存的主题
+    applyChoice(getStoredChoice());
+
+    // 主窗口顶栏快切时同步本窗口
+    const unlistenTheme = listen<string>("theme-changed", (e) => {
+      setThemeChoice(e.payload);
+      applyChoice(e.payload);
+    });
+    onCleanup(() => unlistenTheme.then((fn) => fn()));
 
     try {
       const shortcut = await getShortcut();
@@ -368,6 +384,48 @@ const SettingsPage: Component = () => {
 
       <div class="settings-window-body">
         {/* 快捷键区域 */}
+        <section class="settings-section">
+          <div class="section-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="section-icon">
+              <circle cx="13.5" cy="6.5" r=".5" />
+              <circle cx="17.5" cy="10.5" r=".5" />
+              <circle cx="8.5" cy="7.5" r=".5" />
+              <circle cx="6.5" cy="12.5" r=".5" />
+              <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />
+            </svg>
+            <span>外观</span>
+          </div>
+
+          <div class="theme-grid">
+            <button
+              class={`theme-card ${themeChoice() === "system" ? "active" : ""}`}
+              onClick={() => selectTheme("system")}
+            >
+              <div class="theme-swatch theme-swatch-system">
+                <span class="theme-swatch-half" style={{ background: "#16161e" }}></span>
+                <span class="theme-swatch-half" style={{ background: "#f4f4f8" }}></span>
+              </div>
+              <span class="theme-card-name">跟随系统</span>
+            </button>
+            <For each={THEMES}>
+              {(t) => (
+                <button
+                  class={`theme-card ${themeChoice() === t.id ? "active" : ""}`}
+                  onClick={() => selectTheme(t.id)}
+                >
+                  <div class="theme-swatch" style={{ background: t.preview.bg }}>
+                    <span class="theme-swatch-card" style={{ background: t.preview.card }}>
+                      <span class="theme-swatch-line" style={{ background: t.preview.text }}></span>
+                      <span class="theme-swatch-line short" style={{ background: t.preview.accent }}></span>
+                    </span>
+                  </div>
+                  <span class="theme-card-name">{t.name}</span>
+                </button>
+              )}
+            </For>
+          </div>
+        </section>
+
         <section class="settings-section">
           <div class="section-title">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="section-icon">
