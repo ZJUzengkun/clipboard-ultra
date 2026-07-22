@@ -1,11 +1,12 @@
 use crate::db::{operations::{ClipboardItem, TagRule, Board}, Database};
 use clipboard_rs::{common::RustImage, Clipboard, ClipboardContext};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::sync::RwLock;
-use tauri::{Manager, State};
+use tauri::{Manager, State, Emitter};
 use serde::Serialize;
 
 /// macOS: 用 CGEvent 直接发送 Cmd+V（只需 Accessibility 权限）
@@ -412,6 +413,78 @@ pub fn set_item_tag(
     state.db.set_item_tag(id, tag_opt)
 }
 
+/// 更新条目文本内容（仅文本类），编辑后标签/板归属保留
+#[tauri::command]
+pub fn update_item_content(state: State<AppState>, id: i64, content: String) -> Result<(), String> {
+    state.db.update_item_content(id, &content)
+}
+
+/// 导出全部数据到指定 JSON 文件（图片以 base64 内嵌，自包含备份），返回导出条目数
+#[tauri::command]
+pub fn export_data(state: State<AppState>, path: String) -> Result<usize, String> {
+    let mut items = state.db.export_items()?;
+    // 图片条目：读取原图并 base64 内嵌
+    for it in items.iter_mut() {
+        if it.content_type == "image" {
+            if let Some(ref blob) = it.blob_path {
+                let full = state.blobs_dir.join(blob);
+                if let Ok(bytes) = std::fs::read(&full) {
+                    it.image_base64 = Some(STANDARD.encode(bytes));
+                }
+            }
+        }
+    }
+    let count = items.len();
+    let data = crate::db::operations::ExportData {
+        version: 1,
+        exported_at: chrono::Utc::now().timestamp(),
+        items,
+        tag_rules: state.db.export_tag_rules()?,
+        boards: state.db.export_boards()?,
+    };
+    let json = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| e.to_string())?;
+    Ok(count)
+}
+
+/// 从指定 JSON 文件导入数据（合并，去重跳过），返回新增条目数
+#[tauri::command]
+pub fn import_data(app: tauri::AppHandle, state: State<AppState>, path: String) -> Result<usize, String> {
+    use image::GenericImageView;
+    let json = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut data: crate::db::operations::ExportData =
+        serde_json::from_str(&json).map_err(|_| "文件格式无法识别".to_string())?;
+    std::fs::create_dir_all(&state.blobs_dir).ok();
+    // 图片条目：解码 base64 写回 blob + 生成缩略图
+    for it in data.items.iter_mut() {
+        if it.content_type == "image" {
+            if let Some(ref b64) = it.image_base64 {
+                if let Ok(bytes) = STANDARD.decode(b64) {
+                    let file_id = uuid::Uuid::new_v4().to_string();
+                    let original = state.blobs_dir.join(format!("{}.png", file_id));
+                    if std::fs::write(&original, &bytes).is_ok() {
+                        let thumb = state.blobs_dir.join(format!("{}_thumb.png", file_id));
+                        if let Ok(img) = image::load_from_memory(&bytes) {
+                            let (w, h) = img.dimensions();
+                            if w > 200 {
+                                let new_h = (200 * h) / w;
+                                let _ = img.thumbnail(200, new_h).save(&thumb);
+                            } else {
+                                let _ = std::fs::copy(&original, &thumb);
+                            }
+                        }
+                        it.blob_path = Some(format!("{}.png", file_id));
+                    }
+                }
+            }
+        }
+    }
+    let imported = state.db.import_all(&data.items, &data.tag_rules, &data.boards)?;
+    // 通知主窗口刷新列表
+    let _ = app.emit("clipboard-updated", ());
+    Ok(imported)
+}
+
 /// 打开独立的设置窗口（使用 tauri.conf.json 中预定义的 settings 窗口）
 #[tauri::command]
 pub fn open_settings(app_handle: tauri::AppHandle) -> Result<(), String> {
@@ -423,6 +496,47 @@ pub fn open_settings(app_handle: tauri::AppHandle) -> Result<(), String> {
     } else {
         Err("Settings window not found".to_string())
     }
+}
+
+// ========== 权限自检与通用配置 ==========
+
+/// 检测辅助功能权限（macOS 自动粘贴依赖；其他平台无此概念，恒为已授权）
+#[tauri::command]
+pub fn check_accessibility() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        extern "C" {
+            fn AXIsProcessTrusted() -> bool;
+        }
+        unsafe { AXIsProcessTrusted() }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        true
+    }
+}
+
+/// 跳转系统设置的辅助功能授权页（仅 macOS）
+#[tauri::command]
+pub fn open_accessibility_settings() {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+            .spawn();
+    }
+}
+
+/// 通用 KV 配置读取（app_config 表），供前端轻量开关使用
+#[tauri::command]
+pub fn get_app_config(state: State<AppState>, key: String) -> Result<Option<String>, String> {
+    state.db.get_config(&key)
+}
+
+/// 通用 KV 配置写入（app_config 表）
+#[tauri::command]
+pub fn set_app_config(state: State<AppState>, key: String, value: String) -> Result<(), String> {
+    state.db.set_config(&key, &value)
 }
 
 // ========== 排除应用命令 ==========

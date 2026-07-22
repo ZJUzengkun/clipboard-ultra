@@ -13,6 +13,10 @@ export interface ClipboardItemData {
   updated_at: number;
   is_pinned: boolean;
   tag: string | null;
+  use_count: number;
+  last_used_at: number | null;
+  source_app: string | null;
+  source_app_name: string | null;
 }
 
 interface ClipboardItemProps {
@@ -26,6 +30,7 @@ interface ClipboardItemProps {
   onDelete: (id: number) => void;
   onSetTag: (id: number, tag: string) => void;
   onToggleBoard: (itemId: number, boardId: number, add: boolean) => void;
+  onEdit: (id: number) => void;
 }
 
 const ClipboardItem: Component<ClipboardItemProps> = (props) => {
@@ -63,13 +68,12 @@ const ClipboardItem: Component<ClipboardItemProps> = (props) => {
     image: { name: "图片", color: "#7c6df0" },
   };
 
-  const getContentTypeName = () => {
-    return CONTENT_TYPE_MAP[props.item.content_type]?.name || props.item.content_type;
-  };
-
   const getContentTypeColor = () => {
     return CONTENT_TYPE_MAP[props.item.content_type]?.color || "#a09fbd";
   };
+
+  // 头部标题：有标签显标签名，否则显内容类型名（仃 Paste 分类展示）
+  const headerTitle = () => props.item.tag ?? (CONTENT_TYPE_MAP[props.item.content_type]?.name || "文字");
 
   const getTagColor = () => {
     if (!props.item.tag) return "";
@@ -183,19 +187,21 @@ const ClipboardItem: Component<ClipboardItemProps> = (props) => {
       class={`clipboard-item ${props.isSelected ? "selected" : ""} ${props.item.is_pinned ? "pinned" : ""}`}
       onClick={() => props.onPaste(props.item.id)}
     >
-      {/* Header: 标签 + 时间 */}
+      {/* Header: 类型/标签在上、时间在下两行（仃 Paste） */}
       <div class="item-header" style={{ background: getHeaderGradient() }}>
         <div class="header-left">
-          <Show when={props.item.tag}>
-            <span class="header-tag-dot" style={{ background: getTagColor() }}></span>
-            <span class="header-tag-name">{props.item.tag}</span>
-          </Show>
+          <div class="header-title-row">
+            <Show when={props.item.tag}>
+              <span class="header-tag-dot" style={{ background: getTagColor() }}></span>
+            </Show>
+            <span class="header-title">{headerTitle()}</span>
+          </div>
+          <span class="header-time">{formatTime(props.item.updated_at)}</span>
         </div>
         <div class="header-right">
           <Show when={props.item.is_pinned}>
             <span class="header-pin-icon" title="已收藏">★</span>
           </Show>
-          <span class="header-time">{formatTime(props.item.updated_at)}</span>
         </div>
       </div>
 
@@ -224,13 +230,36 @@ const ClipboardItem: Component<ClipboardItemProps> = (props) => {
 
       {/* Footer: 左侧信息 + 右侧操作按钮 */}
       <div class="item-footer">
-        <span class="item-info">
+        <span class="item-info" title={props.item.source_app ?? undefined}>
+          <Show when={props.item.source_app_name}>
+            <span class="info-source">{props.item.source_app_name}</span>
+            <span class="info-sep">·</span>
+          </Show>
           <Show when={isImage()} fallback={charCount(props.item.content)}>
             <span class="info-type-dot" style={{ background: getContentTypeColor() }}></span>
             图片
           </Show>
+          <Show when={props.item.use_count >= 2}>
+            <span class="info-sep">·</span>
+            <span class="info-use-count">用过 {props.item.use_count} 次</span>
+          </Show>
         </span>
         <div class="item-actions">
+          <Show when={!isImage()}>
+            <button
+              class="btn-action btn-edit"
+              onClick={(e) => {
+                e.stopPropagation();
+                props.onEdit(props.item.id);
+              }}
+              title="编辑"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+            </button>
+          </Show>
           <div class="tag-action-wrapper">
             <button
               class="btn-action btn-tag"

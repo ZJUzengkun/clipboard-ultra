@@ -1,5 +1,5 @@
 import { Component, createSignal, onMount, onCleanup, Show, For } from "solid-js";
-import { getShortcut, setShortcut, getTagRules, addTagRule, deleteTagRule, updateTagRuleExpire, getDefaultExpireDays, setDefaultExpireDays, getContentTypeExpireDays, setContentTypeExpireDays, getMaxItems, setMaxItems, TagRule, getExcludedApps, getExcludedAppsNames, addExcludedApp, removeExcludedApp, getRunningApps, RunningApp } from "../hooks/useClipboard";
+import { getShortcut, setShortcut, getTagRules, addTagRule, deleteTagRule, updateTagRuleExpire, getDefaultExpireDays, setDefaultExpireDays, getContentTypeExpireDays, setContentTypeExpireDays, getMaxItems, setMaxItems, TagRule, getExcludedApps, getExcludedAppsNames, addExcludedApp, removeExcludedApp, getRunningApps, RunningApp, checkAccessibility, openAccessibilitySettings, getAppConfig, setAppConfig, isAutostartEnabled, setAutostart, exportData, importData } from "../hooks/useClipboard";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
 import { THEMES, getStoredChoice, applyChoice, saveChoice } from "../theme";
@@ -20,6 +20,9 @@ const builtinLabel = (pattern: string) => {
   return d ? `内置检测 · ${d.desc}` : pattern;
 };
 
+// 平台判定：辅助功能权限仅 macOS 需要展示
+const IS_WINDOWS = navigator.userAgent.includes("Windows");
+
 const SettingsPage: Component = () => {
   const [currentShortcut, setCurrentShortcut] = createSignal("");
   const [recording, setRecording] = createSignal(false);
@@ -29,10 +32,11 @@ const SettingsPage: Component = () => {
   const [success, setSuccess] = createSignal("");
 
   // 设置分类导航：左侧边栏当前选中项
-  const [activeTab, setActiveTab] = createSignal("appearance");
+  const [activeTab, setActiveTab] = createSignal("general");
 
   // 导航分类（图标与各区块标题一致）
   const navItems = [
+    { id: "general", label: "通用", icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" /></svg> },
     { id: "appearance", label: "外观", icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="13.5" cy="6.5" r=".5" /><circle cx="17.5" cy="10.5" r=".5" /><circle cx="8.5" cy="7.5" r=".5" /><circle cx="6.5" cy="12.5" r=".5" /><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" /></svg> },
     { id: "hotkey", label: "快捷键", icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M8 16h8" /></svg> },
     { id: "tags", label: "标签规则", icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg> },
@@ -43,6 +47,52 @@ const SettingsPage: Component = () => {
 
   // 标签规则状态
   const [rules, setRules] = createSignal<TagRule[]>([]);
+
+  // 通用设置：开机自启 + 呼出时自动聚焦搜索框
+  const [autostartOn, setAutostartOn] = createSignal(false);
+  const [focusSearchOn, setFocusSearchOn] = createSignal(true);
+  // 辅助功能权限状态（null = 检测中）
+  const [axTrusted, setAxTrusted] = createSignal<boolean | null>(null);
+
+  const toggleAutostart = async () => {
+    const next = !autostartOn();
+    try {
+      await setAutostart(next);
+      setAutostartOn(await isAutostartEnabled());
+    } catch (e) {
+      console.error("Failed to toggle autostart:", e);
+    }
+  };
+
+  const toggleFocusSearch = async () => {
+    const next = !focusSearchOn();
+    setFocusSearchOn(next);
+    try {
+      await setAppConfig("focus_search_on_show", next ? "true" : "false");
+      // 通知主窗口即时生效，无需重启
+      emit("focus-search-changed", next);
+    } catch (e) {
+      console.error("Failed to save focus setting:", e);
+    }
+  };
+
+  const recheckAccessibility = async () => {
+    setAxTrusted(await checkAccessibility());
+  };
+
+  onMount(async () => {
+    try {
+      setAutostartOn(await isAutostartEnabled());
+    } catch (e) {
+      console.error("Failed to query autostart:", e);
+    }
+    try {
+      setFocusSearchOn((await getAppConfig("focus_search_on_show")) !== "false");
+    } catch (e) {
+      console.error("Failed to load focus setting:", e);
+    }
+    await recheckAccessibility();
+  });
   const [newRuleName, setNewRuleName] = createSignal("");
   const [newRulePattern, setNewRulePattern] = createSignal("");
   // 规则类型：regex = 手写正则（含留空手动标签），其余为内置检测器的 builtin:xxx
@@ -67,6 +117,44 @@ const SettingsPage: Component = () => {
 
   // 最大保存数量（-1 = 不限制）
   const [maxItems, setMaxItemsSignal] = createSignal(1000);
+
+  // 数据导入/导出状态
+  const [dataBusy, setDataBusy] = createSignal(false);
+  const [dataMsg, setDataMsg] = createSignal("");
+  const [dataErr, setDataErr] = createSignal("");
+
+  const handleExport = async () => {
+    setDataBusy(true);
+    setDataMsg("");
+    setDataErr("");
+    try {
+      const count = await exportData();
+      if (count !== null) setDataMsg(`已导出 ${count} 条记录`);
+    } catch (e: any) {
+      setDataErr(`导出失败：${e}`);
+    } finally {
+      setDataBusy(false);
+    }
+  };
+
+  const handleImport = async () => {
+    setDataBusy(true);
+    setDataMsg("");
+    setDataErr("");
+    try {
+      const count = await importData();
+      if (count !== null) {
+        setDataMsg(`已导入 ${count} 条新记录（重复内容已自动跳过）`);
+        // 刷新本窗口标签规则与主窗口列表
+        try { setRules(await getTagRules()); } catch {}
+        emit("tag-rules-changed");
+      }
+    } catch (e: any) {
+      setDataErr(`导入失败：${e}`);
+    } finally {
+      setDataBusy(false);
+    }
+  };
 
   // 更新状态
   const [appVersion, setAppVersion] = createSignal("");
@@ -429,6 +517,48 @@ const SettingsPage: Component = () => {
         </nav>
 
       <div class="settings-window-body">
+        {/* 通用区域 */}
+        <Show when={activeTab() === "general"}>
+        <section class="settings-section">
+          <div class="section-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="section-icon">
+              <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" />
+            </svg>
+            <span>通用</span>
+          </div>
+
+          <div class="setting-toggle-row">
+            <div class="setting-toggle-info">
+              <span class="setting-toggle-label">开机自启</span>
+              <span class="setting-toggle-desc">登录系统时自动在后台启动剪贴板监听</span>
+            </div>
+            <button
+              class={`toggle-switch ${autostartOn() ? "on" : ""}`}
+              onClick={toggleAutostart}
+              role="switch"
+              aria-checked={autostartOn()}
+            >
+              <span class="toggle-knob" />
+            </button>
+          </div>
+
+          <div class="setting-toggle-row">
+            <div class="setting-toggle-info">
+              <span class="setting-toggle-label">呼出时自动聚焦搜索框</span>
+              <span class="setting-toggle-desc">面板弹出后直接打字即搜；关闭后需点击搜索框</span>
+            </div>
+            <button
+              class={`toggle-switch ${focusSearchOn() ? "on" : ""}`}
+              onClick={toggleFocusSearch}
+              role="switch"
+              aria-checked={focusSearchOn()}
+            >
+              <span class="toggle-knob" />
+            </button>
+          </div>
+        </section>
+        </Show>
+
         {/* 外观区域 */}
         <Show when={activeTab() === "appearance"}>
         <section class="settings-section">
@@ -698,6 +828,30 @@ const SettingsPage: Component = () => {
             <span class="section-badge">{excludedApps().length} 个</span>
           </div>
 
+          {/* 辅助功能权限自检（仅 macOS：自动粘贴依赖此权限） */}
+          <Show when={!IS_WINDOWS}>
+            <div class={`perm-status-card ${axTrusted() === false ? "denied" : ""}`}>
+              <div class="perm-status-info">
+                <span class="perm-status-label">
+                  <span class={`perm-dot ${axTrusted() ? "ok" : axTrusted() === false ? "bad" : ""}`} />
+                  辅助功能权限
+                  <span class="perm-status-text">{axTrusted() === null ? "检测中…" : axTrusted() ? "已授权" : "未授权"}</span>
+                </span>
+                <span class="setting-toggle-desc">自动粘贴需要此权限；重新安装或更新后需重新授权</span>
+              </div>
+              <div class="perm-status-actions">
+                <Show when={axTrusted() === false}>
+                  <button class="btn-add-rule" onClick={() => openAccessibilitySettings()}>前往授权</button>
+                </Show>
+                <button class="btn-recheck" onClick={recheckAccessibility} title="重新检测">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px">
+                    <path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </Show>
+
           <p class="excluded-apps-desc">来自以下应用的复制内容将不会被记录</p>
 
           <Show when={excludedApps().length > 0}>
@@ -860,6 +1014,35 @@ const SettingsPage: Component = () => {
             </div>
             <p class="data-mgmt-note">设置过大或不限制会导致历史条目持续堆积，占用磁盘空间并拖慢启动与搜索速度，建议保持在 1000 以内。</p>
             <p class="data-mgmt-note">置顶条目永不过期，有标签的条目按标签规则配置过期</p>
+          </div>
+
+          <div class="data-management-card">
+            <div class="data-mgmt-row">
+              <div class="data-mgmt-info">
+                <span class="data-mgmt-label">备份与迁移</span>
+                <span class="data-mgmt-desc">导出为 JSON 文件（含文字、图片、标签规则与收藏板）；导入按内容去重合并</span>
+              </div>
+              <div class="data-io-actions">
+                <button class="btn-add-rule" onClick={handleExport} disabled={dataBusy()}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                  </svg>
+                  导出
+                </button>
+                <button class="btn-add-rule" onClick={handleImport} disabled={dataBusy()}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 8l5-5 5 5M12 3v12" />
+                  </svg>
+                  导入
+                </button>
+              </div>
+            </div>
+            <Show when={dataMsg()}>
+              <p class="settings-success">{dataMsg()}</p>
+            </Show>
+            <Show when={dataErr()}>
+              <p class="settings-error">{dataErr()}</p>
+            </Show>
           </div>
         </section>
         </Show>

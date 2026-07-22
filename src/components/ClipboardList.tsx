@@ -13,6 +13,7 @@ interface ClipboardListProps {
   onDelete: (id: number) => void;
   onSetTag: (id: number, tag: string) => void;
   onToggleBoard: (itemId: number, boardId: number, add: boolean) => void;
+  onEdit: (id: number) => void;
   hasMore?: boolean;
   onLoadMore?: () => void;
 }
@@ -67,6 +68,7 @@ const ClipboardList: Component<ClipboardListProps> = (props) => {
               onDelete={props.onDelete}
               onSetTag={props.onSetTag}
               onToggleBoard={props.onToggleBoard}
+              onEdit={props.onEdit}
             />
           )}
         </For>

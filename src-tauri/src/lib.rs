@@ -16,6 +16,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // macOS: 首次启动时提示用户授权辅助功能权限（仅未授权时弹窗）
             #[cfg(target_os = "macos")]
@@ -154,12 +159,19 @@ pub fn run() {
             commands::set_content_type_expire_days,
             commands::get_items_by_tag,
             commands::set_item_tag,
+            commands::update_item_content,
             commands::open_settings,
             commands::get_excluded_apps,
             commands::add_excluded_app,
             commands::remove_excluded_app,
             commands::get_running_apps,
             commands::get_excluded_apps_names,
+            commands::check_accessibility,
+            commands::open_accessibility_settings,
+            commands::get_app_config,
+            commands::set_app_config,
+            commands::export_data,
+            commands::import_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

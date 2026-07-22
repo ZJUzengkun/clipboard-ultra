@@ -15,6 +15,7 @@ import {
   getTagRules,
   getItemsByTag,
   setItemTag,
+  updateItemContent,
   listBoards,
   createBoard,
   getItemsInBoard,
@@ -26,6 +27,9 @@ import {
   TagRule,
   FilterTag,
   Board,
+  checkAccessibility,
+  openAccessibilitySettings,
+  getAppConfig,
 } from "./hooks/useClipboard";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen, emit } from "@tauri-apps/api/event";
@@ -50,6 +54,22 @@ function App() {
   const [total, setTotal] = createSignal(0);
   const [hasMore, setHasMore] = createSignal(false);
   const [loadingMore, setLoadingMore] = createSignal(false);
+  // 呼出时自动聚焦搜索框（设置→通用，默认开启）
+  const [focusSearchOnShow, setFocusSearchOnShow] = createSignal(true);
+  // 辅助功能权限缺失（macOS）：面板顶部展示授权引导条
+  const [axMissing, setAxMissing] = createSignal(false);
+  // 卡片内容编辑浮层：正在编辑的条目与草稿（仅文本类）
+  const [editingItem, setEditingItem] = createSignal<ClipboardItemData | null>(null);
+  const [editDraft, setEditDraft] = createSignal("");
+
+  // 重新检测权限（用户授权后点"重新检测"收起引导条）
+  const recheckAccessibility = async () => {
+    try {
+      setAxMissing(!(await checkAccessibility()));
+    } catch (e) {
+      console.error("Failed to check accessibility:", e);
+    }
+  };
   const PAGE_SIZE = 50;
   const [themeId, setThemeId] = createSignal(resolveThemeId(getStoredChoice()));
   const themeMode = () => themeOf(themeId()).mode;
@@ -212,6 +232,16 @@ function App() {
     // 获取 blobs 目录路径
     getBlobsDir().then(setBlobsDir).catch(console.error);
 
+    // 读取"呼出时自动聚焦搜索框"开关（默认开启）
+    getAppConfig("focus_search_on_show")
+      .then((v) => setFocusSearchOnShow(v !== "false"))
+      .catch(console.error);
+
+    // 检测辅助功能权限（macOS 自动粘贴依赖；未授权时面板顶部展示引导条）
+    checkAccessibility()
+      .then((ok) => setAxMissing(!ok))
+      .catch(console.error);
+
     loadItems(false); // 启动时窗口隐藏，不点亮入场态，留给首次唤起播动画
     loadTagRules();
     loadBoards();
@@ -229,6 +259,11 @@ function App() {
     // 监听设置窗口发来的主题变更事件
     const unlistenTheme = listen<string>("theme-changed", (e) => {
       setThemeId(applyChoice(e.payload).id);
+    });
+
+    // 监听设置窗口发来的"自动聚焦搜索框"开关变更
+    const unlistenFocusCfg = listen<boolean>("focus-search-changed", (e) => {
+      setFocusSearchOnShow(e.payload);
     });
 
     // 监听热键再次触发的收起请求（Rust 侧不直接 hide，由前端播完滑出动画再隐藏）
@@ -257,11 +292,13 @@ function App() {
           }
         });
       }
-      // 自动聚焦搜索框
-      requestAnimationFrame(() => {
-        const input = document.querySelector(".search-bar input") as HTMLInputElement;
-        if (input) input.focus();
-      });
+      // 自动聚焦搜索框（可在设置→通用中关闭）
+      if (focusSearchOnShow()) {
+        requestAnimationFrame(() => {
+          const input = document.querySelector(".search-bar input") as HTMLInputElement;
+          if (input) input.focus();
+        });
+      }
     });
 
     const unlisten = appWindow.onFocusChanged(({ payload: focused }) => {
@@ -280,6 +317,7 @@ function App() {
       unlistenClipboard.then((fn) => fn());
       unlistenTagRules.then((fn) => fn());
       unlistenTheme.then((fn) => fn());
+      unlistenFocusCfg.then((fn) => fn());
       unlistenDismiss.then((fn) => fn());
     });
 
@@ -315,6 +353,34 @@ function App() {
   const handleSetTag = async (id: number, tag: string) => {
     await setItemTag(id, tag);
     await loadItems();
+  };
+
+  // 打开编辑浮层（仅文本类，图片不可编）
+  const openEditor = (id: number) => {
+    const item = items().find((i) => i.id === id);
+    if (!item || item.content_type !== "text") return;
+    setEditingItem(item);
+    setEditDraft(item.content);
+  };
+
+  const cancelEdit = () => {
+    setEditingItem(null);
+    setEditDraft("");
+  };
+
+  // 保存编辑：trim 非空→落库→刷新列表→关闭（标签/板归属后端保留）
+  const saveEdit = async () => {
+    const target = editingItem();
+    if (!target) return;
+    const content = editDraft().trim();
+    if (!content) return;
+    try {
+      await updateItemContent(target.id, content);
+      cancelEdit();
+      await loadItems();
+    } catch (e) {
+      console.error("Failed to update item content:", e);
+    }
   };
 
   const handlePaste = async (id: number) => {
@@ -417,6 +483,18 @@ function App() {
 
   // 键盘导航（左右方向键切换卡片）
   const handleKeyDown = (e: KeyboardEvent) => {
+    // 编辑浮层打开时挂起全局快捷键：仅响应 Esc 取消、⌘/Ctrl+Enter 保存
+    if (editingItem()) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        cancelEdit();
+      } else if (e.key === "Enter" && isModPressed(e)) {
+        e.preventDefault();
+        saveEdit();
+      }
+      return;
+    }
+
     if (e.key === MOD_KEY) {
       setCmdHeld(true);
     }
@@ -478,6 +556,20 @@ function App() {
         break;
       case "Escape":
         dismissPanel();
+        break;
+      case "e":
+      case "E":
+        // 仅当焦点在列表区域（非搜索框等输入控件）时，E 编辑选中条目
+        if (
+          !isModPressed(e) &&
+          (document.activeElement === document.body ||
+            document.activeElement?.closest(".clipboard-list"))
+        ) {
+          if (list[selectedIndex()]) {
+            e.preventDefault();
+            openEditor(list[selectedIndex()].id);
+          }
+        }
         break;
     }
   };
@@ -543,6 +635,17 @@ function App() {
           </button>
         </div>
       </div>
+      <Show when={axMissing()}>
+        <div class="perm-banner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          <span class="perm-banner-text">辅助功能权限未授权，选中后无法自动粘贴</span>
+          <button class="perm-banner-btn" onClick={() => openAccessibilitySettings()}>前往授权</button>
+          <button class="perm-banner-btn ghost" onClick={recheckAccessibility}>我已授权</button>
+        </div>
+      </Show>
       <SearchBar value={keyword()} onInput={handleSearch} />
       <TagBar tags={allTags()} activeTag={activeTag()} onSelectTag={handleSelectTag} />
       <ClipboardList
@@ -556,9 +659,31 @@ function App() {
         onDelete={handleDelete}
         onSetTag={handleSetTag}
         onToggleBoard={handleToggleBoard}
+        onEdit={openEditor}
         hasMore={hasMore()}
         onLoadMore={loadMore}
       />
+      <Show when={editingItem()}>
+        <div class="edit-overlay" onClick={cancelEdit}>
+          <div class="edit-dialog" onClick={(e) => e.stopPropagation()}>
+            <textarea
+              class="edit-textarea"
+              value={editDraft()}
+              onInput={(e) => setEditDraft(e.currentTarget.value)}
+              ref={(el) => requestAnimationFrame(() => { el.focus(); el.select(); })}
+            />
+            <div class="edit-footer">
+              <span class="edit-charcount">{editDraft().trim().length} 个字符</span>
+              <div class="edit-btns">
+                <button class="edit-btn" onClick={cancelEdit}>取消</button>
+                <button class="edit-btn primary" disabled={!editDraft().trim()} onClick={saveEdit}>
+                  保存 {IS_WINDOWS ? "Ctrl+Enter" : "⌘↩"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Show>
     </div>
   );
 }

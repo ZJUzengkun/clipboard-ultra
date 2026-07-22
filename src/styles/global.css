@@ -421,10 +421,10 @@ body {
   flex: 1;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 4px 12px 12px;
+  padding: 6px 28px 14px;
   display: flex;
   flex-direction: row;
-  gap: 8px;
+  gap: 12px;
   scroll-behavior: smooth;
   align-items: stretch;
 }
@@ -432,7 +432,7 @@ body {
 /* ======== Clipboard Item ======== */
 .clipboard-item {
   flex-shrink: 0;
-  width: 180px;
+  width: 216px;
   border-radius: var(--radius-lg);
   cursor: pointer;
   border: 2px solid var(--border);
@@ -480,11 +480,11 @@ body {
 /* ======== Item Header ======== */
 .item-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 10px 14px;
   background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
-  min-height: 36px;
+  min-height: 50px;
 }
 
 [data-mode="light"] .item-header {
@@ -493,8 +493,27 @@ body {
 
 .header-left {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.header-title-row {
+  display: flex;
   align-items: center;
   gap: 5px;
+  max-width: 100%;
+}
+
+.header-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .header-type-dot {
@@ -506,10 +525,10 @@ body {
 }
 
 .header-tag-name {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: #ffffff;
-  max-width: 70px;
+  max-width: 88px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -526,7 +545,8 @@ body {
 
 .header-time {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 500;
 }
 
 [data-mode="light"] .header-time {
@@ -556,13 +576,13 @@ body {
 .item-content {
   flex: 1;
   overflow: hidden;
-  padding: 12px;
+  padding: 14px;
 }
 
 .item-content pre {
   font-family: "JetBrains Mono", "Fira Code", "SF Mono", "Cascadia Code", monospace;
-  font-size: 11px;
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 1.55;
   color: var(--text-primary);
   white-space: pre-wrap;
   word-break: break-all;
@@ -600,21 +620,46 @@ body {
   padding: 6px 12px;
   border-top: 1px solid var(--border);
   min-height: 32px;
+  position: relative;
 }
 
 .item-info {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
   font-weight: 500;
   display: flex;
   align-items: center;
   gap: 4px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .info-type-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Footer 信息分隔点与来源/频率小字 */
+.info-sep {
+  color: var(--text-hint);
+  flex-shrink: 0;
+}
+
+.info-source {
+  max-width: 84px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.info-use-count {
+  color: var(--text-hint);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .item-meta {
@@ -641,19 +686,28 @@ body {
 }
 
 /* ======== Item Actions ======== */
+/* 卡片仅 180px 宽，按钮绝对定位浮在右侧不占布局宽，给信息区腾出整行空间 */
 .item-actions {
+  position: absolute;
+  right: 8px;
+  top: 0;
+  bottom: 0;
   display: flex;
+  align-items: center;
   gap: 2px;
-  justify-content: flex-end;
+  padding-left: 28px;
+  background: linear-gradient(90deg, transparent 0, var(--bg-secondary) 24px);
   opacity: 0;
   transform: translateY(2px);
   transition: all var(--duration-normal) var(--ease-out);
+  pointer-events: none;
 }
 
 .clipboard-item:hover .item-actions,
 .clipboard-item.selected .item-actions {
   opacity: 1;
   transform: translateY(0);
+  pointer-events: auto;
 }
 
 .btn-action {
@@ -1835,6 +1889,201 @@ body {
   color: #fff;
 }
 
+/* ======== 通用设置：开关行 ======== */
+.setting-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+.setting-toggle-row:last-child {
+  border-bottom: none;
+}
+
+.setting-toggle-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.setting-toggle-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.setting-toggle-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.toggle-switch {
+  flex-shrink: 0;
+  width: 38px;
+  height: 22px;
+  padding: 2px;
+  border: none;
+  border-radius: 11px;
+  background: var(--bg-hover);
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+
+.toggle-switch .toggle-knob {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.18s ease;
+}
+
+.toggle-switch.on {
+  background: var(--accent);
+}
+
+.toggle-switch.on .toggle-knob {
+  transform: translateX(16px);
+}
+
+/* ======== 隐私：辅助功能权限自检卡片 ======== */
+.perm-status-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+}
+
+.perm-status-card.denied {
+  border-color: rgba(240, 96, 112, 0.5);
+}
+
+.perm-status-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.perm-status-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.perm-status-text {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.perm-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.perm-dot.ok {
+  background: #50d0a0;
+}
+
+.perm-dot.bad {
+  background: #f06070;
+}
+
+.perm-status-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.btn-recheck {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-recheck:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ======== 主面板：权限缺失引导条 ======== */
+.perm-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 6px;
+  padding: 6px 10px;
+  border: 1px solid rgba(240, 160, 80, 0.45);
+  border-radius: var(--radius-sm);
+  background: rgba(240, 160, 80, 0.12);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.perm-banner svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: #f0a050;
+}
+
+.perm-banner-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.perm-banner-btn {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.perm-banner-btn.ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.perm-banner-btn.ghost:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 .settings-window-body::-webkit-scrollbar {
   width: 6px;
 }
@@ -2044,6 +2293,12 @@ body {
   gap: 2px;
 }
 
+.data-io-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .data-mgmt-label {
   font-size: 13px;
   font-weight: 500;
@@ -2118,19 +2373,19 @@ body {
 .app.show-quick-keys .clipboard-item:nth-child(-n + 9)::before {
   content: counter(quick-key);
   position: absolute;
-  top: 6px;
-  left: 6px;
+  top: 8px;
+  left: 8px;
   z-index: 3;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 5px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 9px;
+  border-radius: 12px;
   background: var(--accent);
   color: #fff;
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 700;
   box-shadow: var(--shadow-card);
   pointer-events: none;
@@ -2170,16 +2425,105 @@ body {
 }
 
 .url-domain {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text-primary);
   word-break: break-all;
 }
 
 .url-full {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
   color: var(--text-muted);
   word-break: break-all;
   overflow: hidden;
+}
+
+/* ======== 卡片内容编辑浮层 ======== */
+.edit-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 24px;
+}
+
+.edit-dialog {
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.edit-textarea {
+  width: 100%;
+  min-height: 180px;
+  max-height: 50vh;
+  padding: 14px 16px;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.6;
+  font-family: inherit;
+}
+
+.edit-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.edit-charcount {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.edit-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.edit-btn {
+  padding: 5px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.edit-btn:hover {
+  background: var(--bg-hover);
+}
+
+.edit-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.edit-btn.primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.edit-btn.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

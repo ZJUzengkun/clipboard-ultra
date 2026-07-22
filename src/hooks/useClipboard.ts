@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { save, open } from "@tauri-apps/plugin-dialog";
 import { ClipboardItemData } from "../components/ClipboardItem";
 
 export interface TagRule {
@@ -155,6 +156,11 @@ export async function setItemTag(id: number, tag: string): Promise<void> {
   return invoke("set_item_tag", { id, tag });
 }
 
+/// 更新条目文本内容（仅文本类），标签/板归属保留
+export async function updateItemContent(id: number, content: string): Promise<void> {
+  return invoke("update_item_content", { id, content });
+}
+
 // ========== 排除应用 API ==========
 
 export interface RunningApp {
@@ -180,4 +186,57 @@ export async function getRunningApps(): Promise<RunningApp[]> {
 
 export async function getExcludedAppsNames(): Promise<Record<string, string>> {
   return invoke("get_excluded_apps_names");
+}
+
+// ========== 权限自检与通用配置 ==========
+
+/// 检测辅助功能权限（非 macOS 恒为 true）
+export async function checkAccessibility(): Promise<boolean> {
+  return invoke("check_accessibility");
+}
+
+/// 跳转系统设置的辅助功能授权页（仅 macOS）
+export async function openAccessibilitySettings(): Promise<void> {
+  return invoke("open_accessibility_settings");
+}
+
+/// 通用 KV 配置读写（app_config 表）
+export async function getAppConfig(key: string): Promise<string | null> {
+  return invoke("get_app_config", { key });
+}
+
+export async function setAppConfig(key: string, value: string): Promise<void> {
+  return invoke("set_app_config", { key, value });
+}
+
+// ========== 开机自启（autostart 插件） ==========
+
+export async function isAutostartEnabled(): Promise<boolean> {
+  return invoke("plugin:autostart|is_enabled");
+}
+
+export async function setAutostart(enabled: boolean): Promise<void> {
+  return invoke(enabled ? "plugin:autostart|enable" : "plugin:autostart|disable");
+}
+
+// ========== 数据导入/导出 ==========
+
+/// 导出全部数据到用户选择的 JSON 文件；返回导出条目数，取消选择时返回 null
+export async function exportData(): Promise<number | null> {
+  const path = await save({
+    defaultPath: `clipboard-backup-${new Date().toISOString().slice(0, 10)}.json`,
+    filters: [{ name: "JSON", extensions: ["json"] }],
+  });
+  if (!path) return null;
+  return invoke("export_data", { path });
+}
+
+/// 从用户选择的 JSON 文件导入（合并去重）；返回新增条目数，取消选择时返回 null
+export async function importData(): Promise<number | null> {
+  const selected = await open({
+    multiple: false,
+    filters: [{ name: "JSON", extensions: ["json"] }],
+  });
+  if (!selected || typeof selected !== "string") return null;
+  return invoke("import_data", { path: selected });
 }

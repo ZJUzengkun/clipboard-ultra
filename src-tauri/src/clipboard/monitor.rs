@@ -22,6 +22,8 @@ pub struct ClipboardMonitor {
     pub skip_next: Arc<AtomicBool>,
     /// 排除应用列表（bundle ID），来自这些应用的复制不会被记录
     excluded_apps: Arc<RwLock<Vec<String>>>,
+    /// 来源应用显示名缓存（bundle ID / exe 名 → 显示名），避免每次复制都 spawn 进程解析
+    app_names: std::sync::Mutex<std::collections::HashMap<String, String>>,
 }
 
 impl ClipboardMonitor {
@@ -35,6 +37,7 @@ impl ClipboardMonitor {
             last_hash: std::sync::Mutex::new(String::new()),
             skip_next: Arc::new(AtomicBool::new(false)),
             excluded_apps,
+            app_names: std::sync::Mutex::new(std::collections::HashMap::new()),
         }
     }
 
@@ -61,24 +64,26 @@ impl ClipboardMonitor {
                     continue;
                 }
 
+                // 采集当前前台应用（一份数据两用：排除判断 + 来源应用记录）
+                #[cfg(target_os = "macos")]
+                let source_app: Option<String> = crate::clipboard::get_frontmost_app_bundle_id();
+                #[cfg(target_os = "windows")]
+                let source_app: Option<String> = crate::clipboard::get_frontmost_app_exe();
+                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                let source_app: Option<String> = None;
+
                 // 检查当前前台应用是否在排除列表中
                 let mut is_excluded = false;
-                #[cfg(target_os = "macos")]
-                {
-                    if let Some(bundle_id) = crate::clipboard::get_frontmost_app_bundle_id() {
-                        let excluded = self.excluded_apps.read().unwrap_or_else(|e| e.into_inner());
-                        if excluded.iter().any(|id| id == &bundle_id) {
-                            is_excluded = true;
-                        }
+                if let Some(ref app_id) = source_app {
+                    let excluded = self.excluded_apps.read().unwrap_or_else(|e| e.into_inner());
+                    // Windows 侧 exe 名已统一小写，排除列表按小写比对
+                    #[cfg(target_os = "windows")]
+                    {
+                        is_excluded = excluded.iter().any(|id| id.to_lowercase() == *app_id);
                     }
-                }
-                #[cfg(target_os = "windows")]
-                {
-                    if let Some(exe_name) = crate::clipboard::get_frontmost_app_exe() {
-                        let excluded = self.excluded_apps.read().unwrap_or_else(|e| e.into_inner());
-                        if excluded.iter().any(|id| id.to_lowercase() == exe_name) {
-                            is_excluded = true;
-                        }
+                    #[cfg(not(target_os = "windows"))]
+                    {
+                        is_excluded = excluded.iter().any(|id| id == app_id);
                     }
                 }
 
@@ -107,9 +112,9 @@ impl ClipboardMonitor {
                     } else {
                         // 正常流程：检测并保存
                         if let Ok(image_data) = ctx.get_image() {
-                            monitor.handle_image(image_data);
+                            monitor.handle_image(image_data, source_app.as_deref());
                         } else if let Ok(text) = ctx.get_text() {
-                            monitor.handle_text(&text);
+                            monitor.handle_text(&text, source_app.as_deref());
                         }
                     }
                 }));
@@ -123,8 +128,35 @@ impl ClipboardMonitor {
         });
     }
 
+    /// 解析来源应用显示名（带缓存）：macOS 用 lsappinfo 查 bundle ID 对应名称，Windows 去掉 .exe 后缀
+    fn resolve_app_name(&self, app_id: &str) -> Option<String> {
+        if let Some(name) = self.app_names.lock().unwrap().get(app_id) {
+            return Some(name.clone());
+        }
+        #[cfg(target_os = "macos")]
+        let name: Option<String> = std::process::Command::new("lsappinfo")
+            .args(["info", "-only", "name", app_id])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            // 输出形如 "LSDisplayName"="Google Chrome"，取第二对引号内容
+            .and_then(|s| s.split('"').nth(3).map(|n| n.to_string()))
+            .filter(|n| !n.is_empty())
+            // 取不到时退化为 bundle ID 末段（如 com.google.Chrome → Chrome）
+            .or_else(|| app_id.rsplit('.').next().map(|n| n.to_string()));
+        #[cfg(target_os = "windows")]
+        let name: Option<String> = Some(app_id.trim_end_matches(".exe").to_string());
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        let name: Option<String> = None;
+
+        if let Some(ref n) = name {
+            self.app_names.lock().unwrap().insert(app_id.to_string(), n.clone());
+        }
+        name
+    }
+
     /// 处理文本剪贴板内容
-    fn handle_text(&self, text: &str) {
+    fn handle_text(&self, text: &str, source_app: Option<&str>) {
         let text = text.trim().to_string();
         if text.is_empty() {
             return;
@@ -134,7 +166,9 @@ impl ClipboardMonitor {
         if *last != hash {
             *last = hash;
             drop(last);
-            match self.db.insert_text(&text) {
+            // hash 确认变化后才解析显示名，避免每轮轮询都 spawn 进程
+            let source_name = source_app.and_then(|id| self.resolve_app_name(id));
+            match self.db.insert_text(&text, source_app, source_name.as_deref()) {
                 Ok(_) => self.notify_update(),
                 Err(e) => eprintln!("Failed to insert clipboard text: {}", e),
             }
@@ -142,7 +176,7 @@ impl ClipboardMonitor {
     }
 
     /// 处理图片剪贴板内容：保存原图 + 缩略图
-    fn handle_image(&self, image_data: RustImageData) {
+    fn handle_image(&self, image_data: RustImageData, source_app: Option<&str>) {
         let raw_bytes = match image_data.to_png() {
             Ok(buf) => buf,
             Err(_) => return,
@@ -186,7 +220,8 @@ impl ClipboardMonitor {
 
         // 存储到数据库，blob_path 保存相对路径（文件名）
         let blob_relative = format!("{}.png", file_id);
-        match self.db.insert_image(&blob_relative, &hash) {
+        let source_name = source_app.and_then(|id| self.resolve_app_name(id));
+        match self.db.insert_image(&blob_relative, &hash, source_app, source_name.as_deref()) {
             Ok(_) => self.notify_update(),
             Err(e) => eprintln!("Failed to insert clipboard image: {}", e),
         }

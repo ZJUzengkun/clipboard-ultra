@@ -19,6 +19,8 @@
     "core:event:allow-unlisten",
     "core:event:allow-emit",
     "updater:default",
-    "process:default"
+    "process:default",
+    "autostart:default",
+    "dialog:default"
   ]
 }

@@ -72,6 +72,14 @@ impl Database {
         // 兼容旧数据库：添加 expire_days 列到 tag_rules
         let _ = conn.execute("ALTER TABLE tag_rules ADD COLUMN expire_days INTEGER NOT NULL DEFAULT 0", []);
 
+        // 兼容旧数据库：使用频率统计列（重复复制/粘贴时累加）
+        let _ = conn.execute("ALTER TABLE clipboard_items ADD COLUMN use_count INTEGER NOT NULL DEFAULT 0", []);
+        let _ = conn.execute("ALTER TABLE clipboard_items ADD COLUMN last_used_at INTEGER", []);
+
+        // 兼容旧数据库：来源应用列（macOS bundle ID / Windows exe 名 + 显示名）
+        let _ = conn.execute("ALTER TABLE clipboard_items ADD COLUMN source_app TEXT", []);
+        let _ = conn.execute("ALTER TABLE clipboard_items ADD COLUMN source_app_name TEXT", []);
+
         // 创建索引（此时 tag 列已确保存在）
         conn.execute_batch(
             "CREATE INDEX IF NOT EXISTS idx_content_hash ON clipboard_items(content_hash);

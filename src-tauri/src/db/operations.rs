@@ -2,7 +2,7 @@ use crate::db::Database;
 use chrono::Utc;
 use regex::Regex;
 use rusqlite;
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use sha2::{Digest, Sha256};
 
 /// 剪贴板条目数据结构，用于前后端传输
@@ -17,6 +17,10 @@ pub struct ClipboardItem {
     pub created_at: i64,
     pub updated_at: i64,
     pub is_pinned: bool,
+    pub use_count: i64,
+    pub last_used_at: Option<i64>,
+    pub source_app: Option<String>,
+    pub source_app_name: Option<String>,
 }
 
 /// 标签规则数据结构
@@ -40,9 +44,81 @@ pub struct Board {
     pub is_builtin: bool,
 }
 
+// ========== 导入/导出数据结构 ==========
+
+/// 导出条目：图片以 base64 内嵌，boards 记录所属板名（按名关联，避免 id 漂移）
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ExportItem {
+    pub content_type: String,
+    pub content: String,
+    pub content_hash: String,
+    pub tag: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub is_pinned: bool,
+    pub use_count: i64,
+    pub last_used_at: Option<i64>,
+    pub source_app: Option<String>,
+    pub source_app_name: Option<String>,
+    #[serde(default)]
+    pub image_base64: Option<String>,
+    #[serde(default)]
+    pub boards: Vec<String>,
+    /// 工作字段：导出时为原始 blob 相对路径、导入时为新写入路径，不参与 JSON
+    #[serde(skip)]
+    pub blob_path: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ExportTagRule {
+    pub name: String,
+    pub pattern: String,
+    pub color: String,
+    pub priority: i64,
+    pub expire_days: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ExportBoard {
+    pub name: String,
+    pub color: String,
+    pub sort_order: i64,
+    pub is_builtin: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ExportData {
+    pub version: u32,
+    pub exported_at: i64,
+    pub items: Vec<ExportItem>,
+    pub tag_rules: Vec<ExportTagRule>,
+    pub boards: Vec<ExportBoard>,
+}
+
 impl Database {
-    /// 插入新文本，自动去重（相同内容置顶）
-    pub fn insert_text(&self, content: &str) -> Result<(), String> {
+    /// 条目查询的统一列清单与行映射（新增列时同步维护这两处）
+    const ITEM_COLS: &'static str = "id, content_type, content, content_hash, blob_path, tag, created_at, updated_at, is_pinned, use_count, last_used_at, source_app, source_app_name";
+
+    fn map_item(row: &rusqlite::Row) -> rusqlite::Result<ClipboardItem> {
+        Ok(ClipboardItem {
+            id: row.get(0)?,
+            content_type: row.get(1)?,
+            content: row.get(2)?,
+            content_hash: row.get(3)?,
+            blob_path: row.get(4)?,
+            tag: row.get(5)?,
+            created_at: row.get(6)?,
+            updated_at: row.get(7)?,
+            is_pinned: row.get::<_, i32>(8)? == 1,
+            use_count: row.get(9)?,
+            last_used_at: row.get(10)?,
+            source_app: row.get(11)?,
+            source_app_name: row.get(12)?,
+        })
+    }
+
+    /// 插入新文本，自动去重（相同内容置顶并累加使用次数）
+    pub fn insert_text(&self, content: &str, source_app: Option<&str>, source_app_name: Option<&str>) -> Result<(), String> {
         let hash = format!("{:x}", Sha256::digest(content.as_bytes()));
         let now = Utc::now().timestamp();
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
@@ -57,9 +133,9 @@ impl Database {
             .ok();
 
         if let Some(id) = existing {
-            // 已存在：更新时间戳（置顶）
+            // 已存在：更新时间戳（置顶），重复复制计入使用次数
             conn.execute(
-                "UPDATE clipboard_items SET updated_at = ?1 WHERE id = ?2",
+                "UPDATE clipboard_items SET updated_at = ?1, use_count = use_count + 1, last_used_at = ?1 WHERE id = ?2",
                 rusqlite::params![now, id],
             )
             .map_err(|e| e.to_string())?;
@@ -69,9 +145,9 @@ impl Database {
 
             // 不存在：插入新记录
             conn.execute(
-                "INSERT INTO clipboard_items (content_type, content, content_hash, tag, created_at, updated_at)
-                 VALUES ('text', ?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![content, hash, tag, now, now],
+                "INSERT INTO clipboard_items (content_type, content, content_hash, tag, created_at, updated_at, source_app, source_app_name)
+                 VALUES ('text', ?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![content, hash, tag, now, now, source_app, source_app_name],
             )
             .map_err(|e| e.to_string())?;
         }
@@ -82,7 +158,7 @@ impl Database {
     }
 
     /// 插入图片记录，存储 blob 路径
-    pub fn insert_image(&self, blob_path: &str, content_hash: &str) -> Result<(), String> {
+    pub fn insert_image(&self, blob_path: &str, content_hash: &str, source_app: Option<&str>, source_app_name: Option<&str>) -> Result<(), String> {
         let now = Utc::now().timestamp();
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
 
@@ -96,18 +172,18 @@ impl Database {
             .ok();
 
         if let Some(id) = existing {
-            // 已存在：更新时间戳
+            // 已存在：更新时间戳，重复复制计入使用次数
             conn.execute(
-                "UPDATE clipboard_items SET updated_at = ?1 WHERE id = ?2",
+                "UPDATE clipboard_items SET updated_at = ?1, use_count = use_count + 1, last_used_at = ?1 WHERE id = ?2",
                 rusqlite::params![now, id],
             )
             .map_err(|e| e.to_string())?;
         } else {
             // 不存在：插入新记录
             conn.execute(
-                "INSERT INTO clipboard_items (content_type, content, content_hash, blob_path, created_at, updated_at)
-                 VALUES ('image', '[图片]', ?1, ?2, ?3, ?4)",
-                rusqlite::params![content_hash, blob_path, now, now],
+                "INSERT INTO clipboard_items (content_type, content, content_hash, blob_path, created_at, updated_at, source_app, source_app_name)
+                 VALUES ('image', '[图片]', ?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![content_hash, blob_path, now, now, source_app, source_app_name],
             )
             .map_err(|e| e.to_string())?;
         }
@@ -121,22 +197,9 @@ impl Database {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let result = conn
             .query_row(
-                "SELECT id, content_type, content, content_hash, blob_path, tag, created_at, updated_at, is_pinned
-                 FROM clipboard_items WHERE id = ?1",
+                &format!("SELECT {} FROM clipboard_items WHERE id = ?1", Self::ITEM_COLS),
                 [id],
-                |row| {
-                    Ok(ClipboardItem {
-                        id: row.get(0)?,
-                        content_type: row.get(1)?,
-                        content: row.get(2)?,
-                        content_hash: row.get(3)?,
-                        blob_path: row.get(4)?,
-                        tag: row.get(5)?,
-                        created_at: row.get(6)?,
-                        updated_at: row.get(7)?,
-                        is_pinned: row.get::<_, i32>(8)? == 1,
-                    })
-                },
+                Self::map_item,
             )
             .ok();
         Ok(result)
@@ -147,29 +210,14 @@ impl Database {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let query = format!("%{}%", keyword);
         let mut stmt = conn
-            .prepare(
-                "SELECT id, content_type, content, content_hash, blob_path, tag, created_at, updated_at, is_pinned
-                 FROM clipboard_items
-                 WHERE content LIKE ?1
-                 ORDER BY updated_at DESC
-                 LIMIT 50",
-            )
+            .prepare(&format!(
+                "SELECT {} FROM clipboard_items WHERE content LIKE ?1 ORDER BY updated_at DESC LIMIT 50",
+                Self::ITEM_COLS
+            ))
             .map_err(|e| e.to_string())?;
 
         let items = stmt
-            .query_map([&query], |row| {
-                Ok(ClipboardItem {
-                    id: row.get(0)?,
-                    content_type: row.get(1)?,
-                    content: row.get(2)?,
-                    content_hash: row.get(3)?,
-                    blob_path: row.get(4)?,
-                    tag: row.get(5)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
-                    is_pinned: row.get::<_, i32>(8)? == 1,
-                })
-            })
+            .query_map([&query], Self::map_item)
             .map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
             .collect();
@@ -181,28 +229,14 @@ impl Database {
     pub fn get_recent(&self, limit: u32, offset: u32) -> Result<Vec<ClipboardItem>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
-            .prepare(
-                "SELECT id, content_type, content, content_hash, blob_path, tag, created_at, updated_at, is_pinned
-                 FROM clipboard_items
-                 ORDER BY updated_at DESC
-                 LIMIT ?1 OFFSET ?2",
-            )
+            .prepare(&format!(
+                "SELECT {} FROM clipboard_items ORDER BY updated_at DESC LIMIT ?1 OFFSET ?2",
+                Self::ITEM_COLS
+            ))
             .map_err(|e| e.to_string())?;
 
         let items = stmt
-            .query_map([limit, offset], |row| {
-                Ok(ClipboardItem {
-                    id: row.get(0)?,
-                    content_type: row.get(1)?,
-                    content: row.get(2)?,
-                    content_hash: row.get(3)?,
-                    blob_path: row.get(4)?,
-                    tag: row.get(5)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
-                    is_pinned: row.get::<_, i32>(8)? == 1,
-                })
-            })
+            .query_map([limit, offset], Self::map_item)
             .map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
             .collect();
@@ -221,29 +255,14 @@ impl Database {
     pub fn get_pinned(&self, limit: u32) -> Result<Vec<ClipboardItem>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
-            .prepare(
-                "SELECT id, content_type, content, content_hash, blob_path, tag, created_at, updated_at, is_pinned
-                 FROM clipboard_items
-                 WHERE is_pinned = 1
-                 ORDER BY updated_at DESC
-                 LIMIT ?1",
-            )
+            .prepare(&format!(
+                "SELECT {} FROM clipboard_items WHERE is_pinned = 1 ORDER BY updated_at DESC LIMIT ?1",
+                Self::ITEM_COLS
+            ))
             .map_err(|e| e.to_string())?;
 
         let items = stmt
-            .query_map([limit], |row| {
-                Ok(ClipboardItem {
-                    id: row.get(0)?,
-                    content_type: row.get(1)?,
-                    content: row.get(2)?,
-                    content_hash: row.get(3)?,
-                    blob_path: row.get(4)?,
-                    tag: row.get(5)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
-                    is_pinned: row.get::<_, i32>(8)? == 1,
-                })
-            })
+            .query_map([limit], Self::map_item)
             .map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
             .collect();
@@ -305,15 +324,36 @@ impl Database {
         Ok(())
     }
 
-    /// 刷新条目的 updated_at 为当前时间（用于粘贴使用时延长过期时间）
+    /// 刷新条目的 updated_at 为当前时间（用于粘贴使用时延长过期时间），同时累加使用次数
     pub fn touch_item(&self, id: i64) -> Result<(), String> {
         let now = Utc::now().timestamp();
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "UPDATE clipboard_items SET updated_at = ?1 WHERE id = ?2",
+            "UPDATE clipboard_items SET updated_at = ?1, use_count = use_count + 1, last_used_at = ?1 WHERE id = ?2",
             rusqlite::params![now, id],
         )
         .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// 更新条目文本内容（仅文本类）：重算 hash，标签/板归属/收藏状态保留不动
+    pub fn update_item_content(&self, id: i64, content: &str) -> Result<(), String> {
+        let content = content.trim();
+        if content.is_empty() {
+            return Err("内容不能为空".to_string());
+        }
+        let hash = format!("{:x}", Sha256::digest(content.as_bytes()));
+        let now = Utc::now().timestamp();
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let updated = conn
+            .execute(
+                "UPDATE clipboard_items SET content = ?1, content_hash = ?2, updated_at = ?3 WHERE id = ?4 AND content_type = 'text'",
+                rusqlite::params![content, hash, now, id],
+            )
+            .map_err(|e| e.to_string())?;
+        if updated == 0 {
+            return Err("条目不存在或非文本类型".to_string());
+        }
         Ok(())
     }
 
@@ -416,6 +456,173 @@ impl Database {
             .collect();
 
         Ok(rules)
+    }
+
+    // ========== 导入/导出 ==========
+
+    /// 导出全部条目（含所属板名），blob_path 为原始相对路径供命令层读取图片
+    pub fn export_items(&self) -> Result<Vec<ExportItem>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        // 板成员映射：item_id -> Vec<board_name>
+        let mut membership: std::collections::HashMap<i64, Vec<String>> = std::collections::HashMap::new();
+        {
+            let mut stmt = conn
+                .prepare("SELECT bi.item_id, b.name FROM board_items bi JOIN boards b ON b.id = bi.board_id")
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+                .map_err(|e| e.to_string())?;
+            for r in rows {
+                if let Ok((item_id, name)) = r {
+                    membership.entry(item_id).or_default().push(name);
+                }
+            }
+        }
+        let sql = format!("SELECT {} FROM clipboard_items ORDER BY id ASC", Self::ITEM_COLS);
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([], Self::map_item).map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for r in rows {
+            let it = r.map_err(|e| e.to_string())?;
+            let boards = membership.remove(&it.id).unwrap_or_default();
+            out.push(ExportItem {
+                content_type: it.content_type,
+                content: it.content,
+                content_hash: it.content_hash,
+                tag: it.tag,
+                created_at: it.created_at,
+                updated_at: it.updated_at,
+                is_pinned: it.is_pinned,
+                use_count: it.use_count,
+                last_used_at: it.last_used_at,
+                source_app: it.source_app,
+                source_app_name: it.source_app_name,
+                image_base64: None,
+                boards,
+                blob_path: it.blob_path,
+            });
+        }
+        Ok(out)
+    }
+
+    /// 导出标签规则
+    pub fn export_tag_rules(&self) -> Result<Vec<ExportTagRule>, String> {
+        let rules = self.get_tag_rules()?;
+        Ok(rules
+            .into_iter()
+            .map(|r| ExportTagRule {
+                name: r.name,
+                pattern: r.pattern,
+                color: r.color,
+                priority: r.priority,
+                expire_days: r.expire_days,
+            })
+            .collect())
+    }
+
+    /// 导出收藏板
+    pub fn export_boards(&self) -> Result<Vec<ExportBoard>, String> {
+        let boards = self.list_boards()?;
+        Ok(boards
+            .into_iter()
+            .map(|b| ExportBoard {
+                name: b.name,
+                color: b.color,
+                sort_order: b.sort_order,
+                is_builtin: b.is_builtin,
+            })
+            .collect())
+    }
+
+    /// 导入数据（合并策略）：条目按 content_hash 去重跳过；标签规则/板按名去重；恢复板归属。返回新导入条目数
+    pub fn import_all(
+        &self,
+        items: &[ExportItem],
+        tag_rules: &[ExportTagRule],
+        boards: &[ExportBoard],
+    ) -> Result<usize, String> {
+        let mut conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let tx = conn.transaction().map_err(|e| e.to_string())?;
+        let now = Utc::now().timestamp();
+
+        // 1. 标签规则：按名去重
+        for r in tag_rules {
+            let exists: bool = tx
+                .query_row("SELECT 1 FROM tag_rules WHERE name = ?1 LIMIT 1", [&r.name], |_| Ok(true))
+                .unwrap_or(false);
+            if !exists {
+                let _ = tx.execute(
+                    "INSERT INTO tag_rules (name, pattern, color, priority, expire_days) VALUES (?1,?2,?3,?4,?5)",
+                    rusqlite::params![r.name, r.pattern, r.color, r.priority, r.expire_days],
+                );
+            }
+        }
+
+        // 2. 板：按名去重（内置板已由迁移保证，仅补非内置）
+        for b in boards {
+            if b.is_builtin {
+                continue;
+            }
+            let exists: bool = tx
+                .query_row("SELECT 1 FROM boards WHERE name = ?1 LIMIT 1", [&b.name], |_| Ok(true))
+                .unwrap_or(false);
+            if !exists {
+                let _ = tx.execute(
+                    "INSERT INTO boards (name, color, sort_order, is_builtin, created_at) VALUES (?1,?2,?3,0,?4)",
+                    rusqlite::params![b.name, b.color, b.sort_order, now],
+                );
+            }
+        }
+
+        // 板名 -> id 映射
+        let mut board_ids: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+        {
+            let mut stmt = tx.prepare("SELECT name, id FROM boards").map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+                .map_err(|e| e.to_string())?;
+            for r in rows {
+                if let Ok((n, id)) = r {
+                    board_ids.insert(n, id);
+                }
+            }
+        }
+
+        // 3. 条目：按 content_hash 去重
+        let mut imported = 0usize;
+        for it in items {
+            let existing: Option<i64> = tx
+                .query_row("SELECT id FROM clipboard_items WHERE content_hash = ?1", [&it.content_hash], |row| row.get(0))
+                .ok();
+            let item_id = if let Some(id) = existing {
+                id
+            } else {
+                tx.execute(
+                    "INSERT INTO clipboard_items (content_type, content, content_hash, blob_path, tag, created_at, updated_at, is_pinned, use_count, last_used_at, source_app, source_app_name)
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+                    rusqlite::params![
+                        it.content_type, it.content, it.content_hash, it.blob_path, it.tag,
+                        it.created_at, it.updated_at, it.is_pinned as i32, it.use_count,
+                        it.last_used_at, it.source_app, it.source_app_name
+                    ],
+                )
+                .map_err(|e| e.to_string())?;
+                imported += 1;
+                tx.last_insert_rowid()
+            };
+            // 恢复板归属
+            for bname in &it.boards {
+                if let Some(&bid) = board_ids.get(bname) {
+                    let _ = tx.execute(
+                        "INSERT OR IGNORE INTO board_items (board_id, item_id, added_at) VALUES (?1,?2,?3)",
+                        rusqlite::params![bid, item_id, now],
+                    );
+                }
+            }
+        }
+
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(imported)
     }
 
     /// 新增标签规则
@@ -584,29 +791,14 @@ impl Database {
     pub fn get_by_tag(&self, tag: &str, limit: u32) -> Result<Vec<ClipboardItem>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
-            .prepare(
-                "SELECT id, content_type, content, content_hash, blob_path, tag, created_at, updated_at, is_pinned
-                 FROM clipboard_items
-                 WHERE tag = ?1
-                 ORDER BY updated_at DESC
-                 LIMIT ?2",
-            )
+            .prepare(&format!(
+                "SELECT {} FROM clipboard_items WHERE tag = ?1 ORDER BY updated_at DESC LIMIT ?2",
+                Self::ITEM_COLS
+            ))
             .map_err(|e| e.to_string())?;
 
         let items = stmt
-            .query_map(rusqlite::params![tag, limit], |row| {
-                Ok(ClipboardItem {
-                    id: row.get(0)?,
-                    content_type: row.get(1)?,
-                    content: row.get(2)?,
-                    content_hash: row.get(3)?,
-                    blob_path: row.get(4)?,
-                    tag: row.get(5)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
-                    is_pinned: row.get::<_, i32>(8)? == 1,
-                })
-            })
+            .query_map(rusqlite::params![tag, limit], Self::map_item)
             .map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
             .collect();
@@ -749,30 +941,19 @@ impl Database {
     /// 获取板内条目（按使用时间倒序）
     pub fn get_items_in_board(&self, board_id: i64, limit: u32) -> Result<Vec<ClipboardItem>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        // board_items 与 clipboard_items 无同名列，列名无需表前缀
         let mut stmt = conn
-            .prepare(
-                "SELECT c.id, c.content_type, c.content, c.content_hash, c.blob_path, c.tag, c.created_at, c.updated_at, c.is_pinned
-                 FROM clipboard_items c
+            .prepare(&format!(
+                "SELECT {} FROM clipboard_items c
                  JOIN board_items b ON b.item_id = c.id
                  WHERE b.board_id = ?1
                  ORDER BY c.updated_at DESC
                  LIMIT ?2",
-            )
+                Self::ITEM_COLS
+            ))
             .map_err(|e| e.to_string())?;
         let items = stmt
-            .query_map(rusqlite::params![board_id, limit], |row| {
-                Ok(ClipboardItem {
-                    id: row.get(0)?,
-                    content_type: row.get(1)?,
-                    content: row.get(2)?,
-                    content_hash: row.get(3)?,
-                    blob_path: row.get(4)?,
-                    tag: row.get(5)?,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
-                    is_pinned: row.get::<_, i32>(8)? == 1,
-                })
-            })
+            .query_map(rusqlite::params![board_id, limit], Self::map_item)
             .map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
             .collect();
