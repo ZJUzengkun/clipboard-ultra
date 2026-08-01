@@ -2,6 +2,7 @@ mod clipboard;
 mod commands;
 mod db;
 mod hotkey;
+mod logger;
 mod tray;
 
 use commands::AppState;
@@ -51,6 +52,9 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .map_err(|e| e.to_string())?;
+            // 初始化轻量文件日志（app_data_dir/app.log，带容量上限自动轮转）
+            logger::init(&app_data_dir);
+            logger::log(&format!("app started, version {}", env!("CARGO_PKG_VERSION")));
             let db = Arc::new(
                 Database::new(app_data_dir.clone())
                     .map_err(|e| format!("Failed to init database: {}", e))?
@@ -120,6 +124,15 @@ pub fn run() {
                 });
             }
 
+            // 主窗口焦点变化日志（排查唤起/自动收起类问题的关键时序）
+            if let Some(main_win) = app.get_webview_window("main") {
+                main_win.on_window_event(|event| {
+                    if let tauri::WindowEvent::Focused(f) = event {
+                        logger::log(&format!("focus: main = {}", f));
+                    }
+                });
+            }
+
             // 创建系统托盘
             tray::create_tray(&handle)
                 .map_err(|e| e.to_string())?;
@@ -143,6 +156,8 @@ pub fn run() {
             commands::search_clipboard,
             commands::toggle_pin_item,
             commands::delete_clipboard_item,
+            commands::clear_items_by_tag,
+            commands::log_frontend,
             commands::paste_item,
             commands::get_blobs_dir,
             commands::get_shortcut,

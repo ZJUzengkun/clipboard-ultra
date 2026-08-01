@@ -324,6 +324,27 @@ impl Database {
         Ok(())
     }
 
+    /// 一键清空某标签/内容类型下的全部条目（板成员保留，与自动清理口径一致），返回删除数
+    pub fn clear_items_by_tag(&self, tag_type: &str, value: &str) -> Result<u64, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let deleted = match tag_type {
+            "rule" => conn
+                .execute(
+                    "DELETE FROM clipboard_items WHERE tag = ?1 AND id NOT IN (SELECT item_id FROM board_items)",
+                    [value],
+                )
+                .map_err(|e| e.to_string())?,
+            "content_type" => conn
+                .execute(
+                    "DELETE FROM clipboard_items WHERE content_type = ?1 AND id NOT IN (SELECT item_id FROM board_items)",
+                    [value],
+                )
+                .map_err(|e| e.to_string())?,
+            _ => return Err("未知标签类型".to_string()),
+        };
+        Ok(deleted as u64)
+    }
+
     /// 刷新条目的 updated_at 为当前时间（用于粘贴使用时延长过期时间），同时累加使用次数
     pub fn touch_item(&self, id: i64) -> Result<(), String> {
         let now = Utc::now().timestamp();

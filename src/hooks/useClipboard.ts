@@ -90,6 +90,11 @@ export async function deleteClipboardItem(id: number): Promise<void> {
   return invoke("delete_clipboard_item", { id });
 }
 
+/// 一键清空某标签/内容类型下的全部条目（收藏板成员保留），返回删除数
+export async function clearItemsByTag(tagType: "rule" | "content_type", value: string): Promise<number> {
+  return invoke("clear_items_by_tag", { tagType, value });
+}
+
 export async function pasteItem(id: number): Promise<void> {
   return invoke("paste_item", { id });
 }

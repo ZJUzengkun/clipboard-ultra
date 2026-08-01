@@ -163,6 +163,20 @@ pub fn delete_clipboard_item(state: State<AppState>, id: i64) -> Result<(), Stri
     state.db.delete_item(id)
 }
 
+/// 一键清空某标签/内容类型下的全部条目（收藏板成员保留），返回删除数
+#[tauri::command]
+pub fn clear_items_by_tag(state: State<AppState>, tag_type: String, value: String) -> Result<u64, String> {
+    let deleted = state.db.clear_items_by_tag(&tag_type, &value)?;
+    crate::logger::log(&format!("clear tag: type={} value={} deleted={}", tag_type, value, deleted));
+    Ok(deleted)
+}
+
+/// 前端日志桥：把 webview 内的关键事件/错误写入 app.log（生产环境 console 不可见）
+#[tauri::command]
+pub fn log_frontend(msg: String) {
+    crate::logger::log(&format!("web: {}", msg));
+}
+
 /// 粘贴指定条目：写入剪贴板 → 隐藏窗口 → 模拟 Ctrl+V/Cmd+V
 #[tauri::command]
 pub fn paste_item(

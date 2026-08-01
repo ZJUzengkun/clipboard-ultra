@@ -10,6 +10,7 @@ import {
   searchClipboard,
   togglePinItem,
   deleteClipboardItem,
+  clearItemsByTag,
   pasteItem,
   getBlobsDir,
   getTagRules,
@@ -274,13 +275,17 @@ function App() {
     // 窗口获得焦点时只聚焦搜索框；视图已在隐藏时后台预备好，避免展示后重载闪烁
     const appWindow = getCurrentWindow();
     let showTimestamp = 0;
+    // 展示初期被原应用（如 Chrome 多窗口）抢回焦点时，允许一次性抢回；每次全新展示重置
+    let focusRegrabbed = false;
 
-    const unlistenShow = appWindow.listen("tauri://focus", () => {
+    // 入场流程：播滑入动画 + 聚焦搜索框（幂等，ready 守卫防重复播放）
+    const playEntrance = () => {
       showTimestamp = Date.now();
       // 播放从底部滑入的入场动画。用 WAAPI 而非 CSS transition：
       // 隐藏窗口恢复渲染时 transition 起始态从未呈现过，会被折叠成跳变；
       // WAAPI 动画的 startTime 在渲染恢复后才分配，保证完整播放
       if (!ready()) {
+        focusRegrabbed = false;
         requestAnimationFrame(() => {
           setReady(true);
           const app = document.querySelector(".app");
@@ -299,21 +304,52 @@ function App() {
           if (input) input.focus();
         });
       }
-    });
+    };
+
+    const unlistenShow = appWindow.listen("tauri://focus", playEntrance);
+
+    // 部分应用（如 Chrome）不让出焦点时 tauri://focus 不触发，
+    // Rust 侧 show 后主动发 panel-shown 作为入场兑底，避免面板停在隐形态
+    const unlistenPanelShown = listen("panel-shown", playEntrance);
+
+    // 失焦后延时复查：若面板仍可见且未夺回焦点则收起。
+    // 没有它，截图工具（如 Xnip）在防闪屏/抢回窗口期内夺走焦点后，
+    // 面板无焦点→再无失焦事件→永不自动收起（只能手动热键）
+    const scheduleFocusRecheck = () => {
+      setTimeout(async () => {
+        try {
+          if ((await appWindow.isVisible()) && !(await appWindow.isFocused())) {
+            dismissPanel();
+          }
+        } catch {}
+      }, 500);
+    };
 
     const unlisten = appWindow.onFocusChanged(({ payload: focused }) => {
       if (!focused) {
-        // 如果窗口刚获得焦点不到 300ms，不要隐藏（防止闪屏）
         const elapsed = Date.now() - showTimestamp;
-        if (elapsed > 300) {
-          dismissPanel();
+        // 如果窗口刚获得焦点不到 300ms，不立即隐藏（防止闪屏），但延时复查兑底
+        if (elapsed <= 300) {
+          scheduleFocusRecheck();
+          return;
         }
+        // Chrome 多窗口等场景：展示初期会被原应用间歇性抢回焦点，
+        // 此时不收起而是一次性抢回，避免面板闪现即逝；同一次展示仅抢一次防拉锯
+        if (elapsed <= 1500 && !focusRegrabbed) {
+          focusRegrabbed = true;
+          appWindow.setFocus().catch(() => {});
+          // 抢回失败（如截图遮罩霸占输入）同样需要兑底收起
+          scheduleFocusRecheck();
+          return;
+        }
+        dismissPanel();
       }
     });
 
     onCleanup(() => {
       unlisten.then((fn) => fn());
       unlistenShow.then((fn) => fn());
+      unlistenPanelShown.then((fn) => fn());
       unlistenClipboard.then((fn) => fn());
       unlistenTagRules.then((fn) => fn());
       unlistenTheme.then((fn) => fn());
@@ -353,6 +389,21 @@ function App() {
   const handleSetTag = async (id: number, tag: string) => {
     await setItemTag(id, tag);
     await loadItems();
+  };
+
+  // 一键清空某标签下全部记录（收藏板成员保留），清后刷新列表
+  const handleClearTag = async (tag: FilterTag) => {
+    try {
+      if (tag.type !== "rule" && tag.type !== "content_type") return;
+      await clearItemsByTag(tag.type, tag.value);
+      // 正在筛选被清空的标签时回到全部视图
+      if (activeTag() === tag.value) setActiveTag("");
+      await loadItems();
+    } catch (e) {
+      console.error("Failed to clear items by tag:", e);
+      // 写入 app.log，生产环境可追溯
+      invoke("log_frontend", { msg: `clear tag failed: ${e}` }).catch(() => {});
+    }
   };
 
   // 打开编辑浮层（仅文本类，图片不可编）
@@ -647,7 +698,7 @@ function App() {
         </div>
       </Show>
       <SearchBar value={keyword()} onInput={handleSearch} />
-      <TagBar tags={allTags()} activeTag={activeTag()} onSelectTag={handleSelectTag} />
+      <TagBar tags={allTags()} activeTag={activeTag()} onSelectTag={handleSelectTag} onClearTag={handleClearTag} />
       <ClipboardList
         items={items()}
         selectedIndex={selectedIndex()}
