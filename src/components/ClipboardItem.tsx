@@ -38,8 +38,8 @@ const ClipboardItem: Component<ClipboardItemProps> = (props) => {
   const [showBoardMenu, setShowBoardMenu] = createSignal(false);
   const [memberBoardIds, setMemberBoardIds] = createSignal<number[]>([]);
 
-  // 星标即归板入口：只有收藏夹一个板时直接切收藏；多板时弹选择菜单
-  const handleStarClick = (e: MouseEvent) => {
+  // 只有默认收藏板时保留星标语义；存在多个板时改为明确的“管理收藏板”入口。
+  const handleBoardClick = (e: MouseEvent) => {
     e.stopPropagation();
     if (props.boards.length <= 1) {
       props.onTogglePin(props.item.id);
@@ -65,6 +65,7 @@ const ClipboardItem: Component<ClipboardItemProps> = (props) => {
 
   const CONTENT_TYPE_MAP: Record<string, { name: string; color: string }> = {
     text: { name: "文字", color: "#50d0a0" },
+    rich_text: { name: "富文本", color: "#e267c8" },
     image: { name: "图片", color: "#7c6df0" },
   };
 
@@ -170,6 +171,7 @@ const ClipboardItem: Component<ClipboardItemProps> = (props) => {
   };
 
   const isImage = () => props.item.content_type === "image";
+  const isEditableText = () => props.item.content_type === "text";
 
   // 内容形态（颜色/链接/普通文本）：渲染时现算，content 不可变故 memo 一次
   const kind = createMemo(() => (isImage() ? "text" : detectKind(props.item.content)));
@@ -245,7 +247,7 @@ const ClipboardItem: Component<ClipboardItemProps> = (props) => {
           </Show>
         </span>
         <div class="item-actions">
-          <Show when={!isImage()}>
+          <Show when={isEditableText()}>
             <button
               class="btn-action btn-edit"
               onClick={(e) => {
@@ -312,22 +314,38 @@ const ClipboardItem: Component<ClipboardItemProps> = (props) => {
           </div>
           <div class="tag-action-wrapper">
             <button
-              class={`btn-action btn-pin ${props.item.is_pinned ? "active" : ""}`}
-              onClick={handleStarClick}
+              class={`btn-action ${props.boards.length > 1 ? "btn-board" : "btn-pin"} ${
+                props.boards.length > 1
+                  ? showBoardMenu() ? "active" : ""
+                  : props.item.is_pinned ? "active" : ""
+              }`}
+              onClick={handleBoardClick}
               title={
                 props.boards.length > 1
-                  ? "加入板"
+                  ? "管理收藏板"
                   : props.item.is_pinned
                     ? "取消收藏"
                     : "收藏"
               }
+              aria-label={props.boards.length > 1 ? "管理收藏板" : "收藏"}
             >
-              <svg viewBox="0 0 24 24" fill={props.item.is_pinned ? "currentColor" : "none"} stroke="currentColor" stroke-width="2">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-              </svg>
+              <Show
+                when={props.boards.length > 1}
+                fallback={
+                  <svg viewBox="0 0 24 24" fill={props.item.is_pinned ? "currentColor" : "none"} stroke="currentColor" stroke-width="2">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                  </svg>
+                }
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 7.5V6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7.5z" />
+                  <path d="M12 10v6M9 13h6" />
+                </svg>
+              </Show>
             </button>
             <Show when={showBoardMenu()}>
-              <div class="tag-menu">
+              <div class="tag-menu board-menu">
+                <div class="board-menu-title">收藏到</div>
                 <For each={props.boards}>
                   {(board) => {
                     const isMember = () => memberBoardIds().includes(board.id);

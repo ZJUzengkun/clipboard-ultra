@@ -158,6 +158,7 @@ pub fn run() {
             commands::delete_clipboard_item,
             commands::clear_items_by_tag,
             commands::log_frontend,
+            commands::dismiss_panel,
             commands::paste_item,
             commands::get_blobs_dir,
             commands::get_shortcut,

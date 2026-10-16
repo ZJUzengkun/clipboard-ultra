@@ -1,5 +1,5 @@
 use crate::db::{operations::{ClipboardItem, TagRule, Board}, Database};
-use clipboard_rs::{common::RustImage, Clipboard, ClipboardContext};
+use clipboard_rs::{common::RustImage, Clipboard, ClipboardContent, ClipboardContext};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -47,6 +47,14 @@ fn simulate_paste_macos() {
     };
     key_up.set_flags(CGEventFlags::CGEventFlagCommand);
     key_up.post(CGEventTapLocation::HID);
+}
+
+/// 统一收起主面板；macOS 由 AppKit 播放退出动画，其他平台立即隐藏。
+#[tauri::command]
+pub fn dismiss_panel(app_handle: tauri::AppHandle) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        crate::hotkey::hide_panel(&window);
+    }
 }
 
 /// 应用全局状态，存储数据库引用和 blob 目录
@@ -213,15 +221,25 @@ pub fn paste_item(
         } else {
             return Err("Image item has no blob path".to_string());
         }
+    } else if item.content_type == "rich_text" {
+        // 富文本一次写回多种表示：支持格式的目标应用取 HTML/RTF，其他应用降级为纯文本。
+        let mut contents = vec![ClipboardContent::Text(item.content.clone())];
+        if let Some(html) = item.html_content.filter(|value| !value.is_empty()) {
+            contents.push(ClipboardContent::Html(html));
+        }
+        if let Some(rtf) = item.rtf_content.filter(|value| !value.is_empty()) {
+            contents.push(ClipboardContent::Rtf(rtf));
+        }
+        ctx.set(contents).map_err(|e| e.to_string())?;
     } else {
-        // 文本类型
+        // 普通文本类型
         ctx.set_text(item.content.clone())
             .map_err(|e| e.to_string())?;
     }
 
-    // 隐藏窗口
+    // 收起窗口（macOS 会先播放短促的向下退出动画）
     if let Some(window) = app_handle.get_webview_window("main") {
-        let _ = window.hide();
+        crate::hotkey::hide_panel(&window);
     }
 
     // 模拟粘贴快捷键
@@ -231,6 +249,8 @@ pub fn paste_item(
         // CGEvent 只需 Accessibility 权限，不需要主线程、不需要 Automation 权限
         let prev = state.previous_app.lock().unwrap().take();
         std::thread::spawn(move || {
+            // 等退出动画完成后再恢复目标应用并粘贴，避免动画被应用切换截断。
+            std::thread::sleep(std::time::Duration::from_millis(140));
             if let Some(bundle_id) = prev {
                 // 用 osascript 激活前台应用（同步，返回时焦点已切换）
                 let _ = std::process::Command::new("osascript")
@@ -450,7 +470,7 @@ pub fn export_data(state: State<AppState>, path: String) -> Result<usize, String
     }
     let count = items.len();
     let data = crate::db::operations::ExportData {
-        version: 1,
+        version: 2,
         exported_at: chrono::Utc::now().timestamp(),
         items,
         tag_rules: state.db.export_tag_rules()?,

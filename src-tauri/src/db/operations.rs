@@ -13,6 +13,10 @@ pub struct ClipboardItem {
     pub content: String,
     pub content_hash: String,
     pub blob_path: Option<String>,
+    #[serde(skip_serializing)]
+    pub html_content: Option<String>,
+    #[serde(skip_serializing)]
+    pub rtf_content: Option<String>,
     pub tag: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
@@ -61,6 +65,10 @@ pub struct ExportItem {
     pub source_app: Option<String>,
     pub source_app_name: Option<String>,
     #[serde(default)]
+    pub html_content: Option<String>,
+    #[serde(default)]
+    pub rtf_content: Option<String>,
+    #[serde(default)]
     pub image_base64: Option<String>,
     #[serde(default)]
     pub boards: Vec<String>,
@@ -97,7 +105,7 @@ pub struct ExportData {
 
 impl Database {
     /// 条目查询的统一列清单与行映射（新增列时同步维护这两处）
-    const ITEM_COLS: &'static str = "id, content_type, content, content_hash, blob_path, tag, created_at, updated_at, is_pinned, use_count, last_used_at, source_app, source_app_name";
+    const ITEM_COLS: &'static str = "id, content_type, content, content_hash, blob_path, html_content, rtf_content, tag, created_at, updated_at, is_pinned, use_count, last_used_at, source_app, source_app_name";
 
     fn map_item(row: &rusqlite::Row) -> rusqlite::Result<ClipboardItem> {
         Ok(ClipboardItem {
@@ -106,14 +114,16 @@ impl Database {
             content: row.get(2)?,
             content_hash: row.get(3)?,
             blob_path: row.get(4)?,
-            tag: row.get(5)?,
-            created_at: row.get(6)?,
-            updated_at: row.get(7)?,
-            is_pinned: row.get::<_, i32>(8)? == 1,
-            use_count: row.get(9)?,
-            last_used_at: row.get(10)?,
-            source_app: row.get(11)?,
-            source_app_name: row.get(12)?,
+            html_content: row.get(5)?,
+            rtf_content: row.get(6)?,
+            tag: row.get(7)?,
+            created_at: row.get(8)?,
+            updated_at: row.get(9)?,
+            is_pinned: row.get::<_, i32>(10)? == 1,
+            use_count: row.get(11)?,
+            last_used_at: row.get(12)?,
+            source_app: row.get(13)?,
+            source_app_name: row.get(14)?,
         })
     }
 
@@ -153,6 +163,46 @@ impl Database {
         }
 
         // 清理超限记录
+        self.cleanup_old_items(&conn)?;
+        Ok(())
+    }
+
+    /// 插入富文本：content 保存纯文本供搜索，HTML/RTF 保存原始格式供预览与粘贴。
+    pub fn insert_rich_text(
+        &self,
+        content: &str,
+        html_content: Option<&str>,
+        rtf_content: Option<&str>,
+        content_hash: &str,
+        source_app: Option<&str>,
+        source_app_name: Option<&str>,
+    ) -> Result<(), String> {
+        let now = Utc::now().timestamp();
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let existing: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM clipboard_items WHERE content_hash = ?1",
+                [content_hash],
+                |row| row.get(0),
+            )
+            .ok();
+
+        if let Some(id) = existing {
+            conn.execute(
+                "UPDATE clipboard_items SET updated_at = ?1, use_count = use_count + 1, last_used_at = ?1 WHERE id = ?2",
+                rusqlite::params![now, id],
+            )
+            .map_err(|e| e.to_string())?;
+        } else {
+            let tag = Self::match_tag_with_conn(&conn, content);
+            conn.execute(
+                "INSERT INTO clipboard_items (content_type, content, content_hash, html_content, rtf_content, tag, created_at, updated_at, source_app, source_app_name)
+                 VALUES ('rich_text', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                rusqlite::params![content, content_hash, html_content, rtf_content, tag, now, now, source_app, source_app_name],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+
         self.cleanup_old_items(&conn)?;
         Ok(())
     }
@@ -518,6 +568,8 @@ impl Database {
                 last_used_at: it.last_used_at,
                 source_app: it.source_app,
                 source_app_name: it.source_app_name,
+                html_content: it.html_content,
+                rtf_content: it.rtf_content,
                 image_base64: None,
                 boards,
                 blob_path: it.blob_path,
@@ -619,12 +671,13 @@ impl Database {
                 id
             } else {
                 tx.execute(
-                    "INSERT INTO clipboard_items (content_type, content, content_hash, blob_path, tag, created_at, updated_at, is_pinned, use_count, last_used_at, source_app, source_app_name)
-                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+                    "INSERT INTO clipboard_items (content_type, content, content_hash, blob_path, html_content, rtf_content, tag, created_at, updated_at, is_pinned, use_count, last_used_at, source_app, source_app_name)
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
                     rusqlite::params![
-                        it.content_type, it.content, it.content_hash, it.blob_path, it.tag,
-                        it.created_at, it.updated_at, it.is_pinned as i32, it.use_count,
-                        it.last_used_at, it.source_app, it.source_app_name
+                        it.content_type, it.content, it.content_hash, it.blob_path,
+                        it.html_content, it.rtf_content, it.tag, it.created_at, it.updated_at,
+                        it.is_pinned as i32, it.use_count, it.last_used_at,
+                        it.source_app, it.source_app_name
                     ],
                 )
                 .map_err(|e| e.to_string())?;
@@ -722,11 +775,13 @@ impl Database {
         }
 
         // 按内容类型清理无标签条目
-        let known_types = ["image", "text"];
+        let known_types = ["image", "text", "rich_text"];
         let mut configured_types: Vec<String> = Vec::new();
 
         for ct in &known_types {
-            let key = format!("expire_days_{}", ct);
+            // 富文本与普通文字共用同一个保留时间设置。
+            let config_type = if *ct == "rich_text" { "text" } else { ct };
+            let key = format!("expire_days_{}", config_type);
             let expire: i64 = conn
                 .query_row(
                     "SELECT value FROM app_config WHERE key = ?1",

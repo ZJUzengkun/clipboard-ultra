@@ -265,13 +265,6 @@ body {
   border-radius: 0;
   border-top: 1px solid var(--border);
   overflow: hidden;
-  /* 默认滑出窗口下方（窗口透明，不可见）。入场滑入由 JS 用 WAAPI 驱动——
-     CSS transition 在隐藏窗口恢复渲染时会被折叠成跳变，不可靠 */
-  transform: translateY(100%);
-}
-
-.app.ready {
-  transform: translateY(0);
 }
 
 /* Windows 平台覆盖：实色背景（WebView2 不支持窗口透明 + backdrop-filter） */
@@ -746,6 +739,12 @@ body {
 .btn-pin.active {
   color: var(--accent-warm);
   background: var(--accent-warm-soft);
+}
+
+.btn-board:hover,
+.btn-board.active {
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .btn-delete:hover {
@@ -1515,6 +1514,20 @@ body {
   color: var(--text-muted);
   text-align: center;
   white-space: nowrap;
+}
+
+.board-menu {
+  min-width: 128px;
+}
+
+.board-menu-title {
+  padding: 4px 10px 6px;
+  color: var(--text-hint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 2px;
 }
 
 /* ======== Settings: Tag Rules ======== */

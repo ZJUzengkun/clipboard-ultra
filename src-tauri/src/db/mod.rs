@@ -24,6 +24,8 @@ impl Database {
                 content TEXT NOT NULL,
                 content_hash TEXT NOT NULL,
                 blob_path TEXT,
+                html_content TEXT,
+                rtf_content TEXT,
                 tag TEXT,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
@@ -79,6 +81,10 @@ impl Database {
         // 兼容旧数据库：来源应用列（macOS bundle ID / Windows exe 名 + 显示名）
         let _ = conn.execute("ALTER TABLE clipboard_items ADD COLUMN source_app TEXT", []);
         let _ = conn.execute("ALTER TABLE clipboard_items ADD COLUMN source_app_name TEXT", []);
+
+        // 兼容旧数据库：富文本同时保留 HTML/RTF，content 继续存可搜索的纯文本
+        let _ = conn.execute("ALTER TABLE clipboard_items ADD COLUMN html_content TEXT", []);
+        let _ = conn.execute("ALTER TABLE clipboard_items ADD COLUMN rtf_content TEXT", []);
 
         // 创建索引（此时 tag 列已确保存在）
         conn.execute_batch(

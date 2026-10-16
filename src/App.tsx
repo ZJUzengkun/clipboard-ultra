@@ -51,7 +51,6 @@ function App() {
   const [tagRules, setTagRules] = createSignal<TagRule[]>([]);
   const [boards, setBoards] = createSignal<Board[]>([]);
   const [pendingDeletes, setPendingDeletes] = createSignal<ClipboardItemData[]>([]);
-  const [ready, setReady] = createSignal(false);
   const [total, setTotal] = createSignal(0);
   const [hasMore, setHasMore] = createSignal(false);
   const [loadingMore, setLoadingMore] = createSignal(false);
@@ -76,6 +75,9 @@ function App() {
   const themeMode = () => themeOf(themeId()).mode;
 
   let refreshInterval: number;
+  // AppKit 直接显示 NSWindow 时，Tauri 的 isVisible() 在少数系统版本上可能短暂不同步。
+  // 前端以成对的 panel-shown / panel-hidden 事件维护面板生命周期，供失焦关闭使用。
+  let panelShown = false;
 
   // 顶栏快切：在暗/亮两组的最近使用主题间切换
   const toggleTheme = () => {
@@ -88,6 +90,7 @@ function App() {
     // 标签行只放筛选标签，板页签独立在顶部 BoardBar
     const systemTags: FilterTag[] = [
       { name: "文字", type: "content_type", value: "text", color: "#50d0a0" },
+      { name: "富文本", type: "content_type", value: "rich_text", color: "#e267c8" },
       { name: "图片", type: "content_type", value: "image", color: "#7c6df0" },
     ];
     const ruleTags: FilterTag[] = tagRules().map((r) => ({
@@ -154,7 +157,7 @@ function App() {
     }
   };
 
-  const loadItems = async (markReady = true) => {
+  const loadItems = async () => {
     try {
       const k = keyword();
       const tagValue = activeTag();
@@ -188,8 +191,6 @@ function App() {
         setHasMore(false);
         setTotal(result.length);
       }
-      // 数据就绪后触发入场（隐藏时后台预载不触发，留给唤起时播滑入动画）
-      if (markReady) requestAnimationFrame(() => setReady(true));
     } catch (e) {
       console.error("Failed to load items:", e);
     }
@@ -243,13 +244,13 @@ function App() {
       .then((ok) => setAxMissing(!ok))
       .catch(console.error);
 
-    loadItems(false); // 启动时窗口隐藏，不点亮入场态，留给首次唤起播动画
+    loadItems();
     loadTagRules();
     loadBoards();
 
     // 监听后端剪贴板更新事件（替代轮询；隐藏时也会触发，不动入场态）
     const unlistenClipboard = listen("clipboard-updated", () => {
-      loadItems(false);
+      loadItems();
     });
 
     // 监听设置窗口发来的标签规则变更事件
@@ -267,99 +268,61 @@ function App() {
       setFocusSearchOnShow(e.payload);
     });
 
-    // 监听热键再次触发的收起请求（Rust 侧不直接 hide，由前端播完滑出动画再隐藏）
-    const unlistenDismiss = listen("panel-dismiss", () => {
-      dismissPanel();
-    });
-
-    // 窗口获得焦点时只聚焦搜索框；视图已在隐藏时后台预备好，避免展示后重载闪烁
+    // 后端使用原生窗口 API 完成定位与显示后，再通知前端聚焦搜索框。
     const appWindow = getCurrentWindow();
     let showTimestamp = 0;
-    // 展示初期被原应用（如 Chrome 多窗口）抢回焦点时，允许一次性抢回；每次全新展示重置
-    let focusRegrabbed = false;
 
-    // 入场流程：播滑入动画 + 聚焦搜索框（幂等，ready 守卫防重复播放）
-    const playEntrance = () => {
+    const unlistenPanelShown = appWindow.listen("panel-shown", () => {
+      panelShown = true;
       showTimestamp = Date.now();
-      // 搜索框可能在上次入场动画期间触发浏览器自动滚动；每次展示先强制归零。
       window.scrollTo(0, 0);
-      // 播放从底部滑入的入场动画。用 WAAPI 而非 CSS transition：
-      // 隐藏窗口恢复渲染时 transition 起始态从未呈现过，会被折叠成跳变；
-      // WAAPI 动画的 startTime 在渲染恢复后才分配，保证完整播放
-      if (!ready()) {
-        focusRegrabbed = false;
-        requestAnimationFrame(() => {
-          // 与 WAAPI 动画在同一帧解除 CSS 隐藏态，避免先显示最终位置一帧后
-          // 又跳回动画起点造成闪烁。搜索框使用 preventScroll，不会再带动页面滚动。
-          setReady(true);
-          const app = document.querySelector(".app");
-          if (app) {
-            app.animate(
-              [{ transform: "translateY(100%)" }, { transform: "translateY(0)" }],
-              { duration: 200, easing: "cubic-bezier(0.32, 0.72, 0.28, 1)" }
-            );
-          }
-        });
-      }
-      // 自动聚焦搜索框（可在设置→通用中关闭）
-      if (focusSearchOnShow()) {
-        requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (focusSearchOnShow()) {
           const input = document.querySelector(".search-bar input") as HTMLInputElement;
           if (input) input.focus({ preventScroll: true });
           window.scrollTo(0, 0);
-        });
-      }
-    };
+        }
+      });
+    });
 
-    const unlistenShow = appWindow.listen("tauri://focus", playEntrance);
+    // 退出动画开始时先停止失焦判断，等窗口真正隐藏后再清理视图，避免动画途中
+    // 搜索条件或卡片内容突然变化。
+    const unlistenPanelClosing = appWindow.listen("panel-closing", () => {
+      panelShown = false;
+    });
 
-    // 部分应用（如 Chrome）不让出焦点时 tauri://focus 不触发，
-    // Rust 侧 show 后主动发 panel-shown 作为入场兑底，避免面板停在隐形态
-    const unlistenPanelShown = listen("panel-shown", playEntrance);
+    const unlistenPanelHidden = appWindow.listen("panel-hidden", () => {
+      panelShown = false;
+      resetViewAfterHide();
+    });
 
-    // 失焦后延时复查：若面板仍可见且未夺回焦点则收起。
-    // 没有它，截图工具（如 Xnip）在防闪屏/抢回窗口期内夺走焦点后，
-    // 面板无焦点→再无失焦事件→永不自动收起（只能手动热键）
-    const scheduleFocusRecheck = () => {
+    // AppKit 显示时不依赖 Tauri isVisible()，而以 panelShown 判断生命周期。
+    // 刚展示时留出很短的系统焦点切换窗口，之后任何真实失焦都自动收起。
+    const scheduleFocusRecheck = (delay: number) => {
       setTimeout(async () => {
         try {
-          if ((await appWindow.isVisible()) && !(await appWindow.isFocused())) {
+          if (panelShown && !(await appWindow.isFocused())) {
             dismissPanel();
           }
         } catch {}
-      }, 500);
+      }, delay);
     };
 
     const unlisten = appWindow.onFocusChanged(({ payload: focused }) => {
-      if (!focused) {
-        const elapsed = Date.now() - showTimestamp;
-        // 如果窗口刚获得焦点不到 300ms，不立即隐藏（防止闪屏），但延时复查兑底
-        if (elapsed <= 300) {
-          scheduleFocusRecheck();
-          return;
-        }
-        // Chrome 多窗口等场景：展示初期会被原应用间歇性抢回焦点，
-        // 此时不收起而是一次性抢回，避免面板闪现即逝；同一次展示仅抢一次防拉锯
-        if (elapsed <= 1500 && !focusRegrabbed) {
-          focusRegrabbed = true;
-          appWindow.setFocus().catch(() => {});
-          // 抢回失败（如截图遮罩霸占输入）同样需要兑底收起
-          scheduleFocusRecheck();
-          return;
-        }
-        dismissPanel();
-      }
+      if (focused || !panelShown) return;
+      const elapsed = Date.now() - showTimestamp;
+      scheduleFocusRecheck(elapsed < 300 ? 300 - elapsed : 60);
     });
 
     onCleanup(() => {
       unlisten.then((fn) => fn());
-      unlistenShow.then((fn) => fn());
       unlistenPanelShown.then((fn) => fn());
+      unlistenPanelClosing.then((fn) => fn());
+      unlistenPanelHidden.then((fn) => fn());
       unlistenClipboard.then((fn) => fn());
       unlistenTagRules.then((fn) => fn());
       unlistenTheme.then((fn) => fn());
       unlistenFocusCfg.then((fn) => fn());
-      unlistenDismiss.then((fn) => fn());
     });
 
     // 跟随系统时响应系统外观变化
@@ -442,11 +405,7 @@ function App() {
   const handlePaste = async (id: number) => {
     if (hiding) return;
     hiding = true;
-    // 先播滑出动画再触发粘贴（Rust 侧会隐藏窗口并恢复焦点粘贴）
-    const anim = await playSlideOut();
     await pasteItem(id);
-    anim?.cancel();
-    await resetViewAfterHide();
     hiding = false;
   };
 
@@ -499,39 +458,24 @@ function App() {
     setPendingDeletes([]);
   };
 
-  // 隐藏后后台重置视图：复位入场动画 → 落库待删项 → 清搜索/筛选 → 预加载最新数据
+  // 隐藏后后台重置视图：落库待删项 → 清搜索/筛选 → 预加载最新数据
   const resetViewAfterHide = async () => {
-    setReady(false);
     window.scrollTo(0, 0);
     await commitDeletes();
     setKeyword("");
     setActiveTag("");
     setSelectedIndex(0);
-    await loadItems(false);
+    await loadItems();
     loadBoards();
   };
 
-  // 滑出动画（WAAPI，理由同入场：CSS transition 在隐藏/恢复时不可靠）
-  const playSlideOut = async () => {
-    const app = document.querySelector(".app");
-    if (!app) return undefined;
-    const anim = app.animate(
-      [{ transform: "translateY(0)" }, { transform: "translateY(100%)" }],
-      { duration: 140, easing: "cubic-bezier(0.4, 0, 1, 1)", fill: "forwards" }
-    );
-    await anim.finished.catch(() => {});
-    return anim;
-  };
-
-  // 统一收起流程：滑出动画 → 隐藏窗口 → 后台重置视图（hiding 防多路径重入）
+  // 统一收起流程：后端播放原生退出动画；panel-hidden 事件负责后台复位视图。
   let hiding = false;
   const dismissPanel = async () => {
     if (hiding) return;
     hiding = true;
-    const anim = await playSlideOut();
-    await getCurrentWindow().hide();
-    anim?.cancel();
-    await resetViewAfterHide();
+    panelShown = false;
+    await invoke("dismiss_panel");
     hiding = false;
   };
 
@@ -659,7 +603,7 @@ function App() {
   });
 
   return (
-    <div class={`app ${ready() ? "ready" : ""} ${cmdHeld() ? "show-quick-keys" : ""}`}>
+    <div class={`app ${cmdHeld() ? "show-quick-keys" : ""}`}>
       <div class="titlebar" data-tauri-drag-region>
         <BoardBar
           boards={boards()}

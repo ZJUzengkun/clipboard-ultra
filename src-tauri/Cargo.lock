@@ -541,7 +541,7 @@ dependencies = [
 
 [[package]]
 name = "clipboard-ultra"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -550,6 +550,9 @@ dependencies = [
  "core-graphics 0.24.0",
  "enigo",
  "image",
+ "objc2 0.6.4",
+ "objc2-app-kit",
+ "objc2-foundation",
  "regex",
  "rusqlite",
  "serde",

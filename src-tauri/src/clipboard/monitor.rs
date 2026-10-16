@@ -27,6 +27,25 @@ pub struct ClipboardMonitor {
 }
 
 impl ClipboardMonitor {
+    /// 富文本 hash 同时包含纯文本和所有可用格式，避免相同文字的不同样式互相覆盖。
+    fn rich_content_hash(text: &str, html: Option<&str>, rtf: Option<&str>) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(b"rich-text\0");
+        hasher.update(text.len().to_le_bytes());
+        hasher.update(text.as_bytes());
+        if let Some(value) = html {
+            hasher.update(b"html\0");
+            hasher.update(value.len().to_le_bytes());
+            hasher.update(value.as_bytes());
+        }
+        if let Some(value) = rtf {
+            hasher.update(b"rtf\0");
+            hasher.update(value.len().to_le_bytes());
+            hasher.update(value.as_bytes());
+        }
+        format!("{:x}", hasher.finalize())
+    }
+
     pub fn new(db: Arc<Database>, app_data_dir: PathBuf, app_handle: AppHandle, excluded_apps: Arc<RwLock<Vec<String>>>) -> Self {
         let blobs_dir = app_data_dir.join("blobs");
         std::fs::create_dir_all(&blobs_dir).ok();
@@ -92,7 +111,29 @@ impl ClipboardMonitor {
                 let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
                     if is_excluded {
                         // 排除应用：只更新 hash 不入库，防止切换应用后误触发保存
-                        if let Ok(image_data) = ctx.get_image() {
+                        let text = ctx.get_text().ok().map(|value| value.trim().to_string()).filter(|value| !value.is_empty());
+                        let html = ctx.get_html().ok().filter(|value| !value.trim().is_empty());
+                        let rtf = ctx.get_rich_text().ok().filter(|value| !value.trim().is_empty());
+                        if let Some(ref text) = text {
+                            if html.is_some() || rtf.is_some() {
+                                let hash = Self::rich_content_hash(text, html.as_deref(), rtf.as_deref());
+                                let mut last = monitor.last_hash.lock().unwrap();
+                                *last = hash;
+                            } else if let Ok(image_data) = ctx.get_image() {
+                                if let Ok(buf) = image_data.to_png() {
+                                    let bytes = buf.get_bytes();
+                                    if !bytes.is_empty() {
+                                        let hash = format!("{:x}", Sha256::digest(bytes));
+                                        let mut last = monitor.last_hash.lock().unwrap();
+                                        *last = hash;
+                                    }
+                                }
+                            } else {
+                                let hash = format!("{:x}", Sha256::digest(text.as_bytes()));
+                                let mut last = monitor.last_hash.lock().unwrap();
+                                *last = hash;
+                            }
+                        } else if let Ok(image_data) = ctx.get_image() {
                             if let Ok(buf) = image_data.to_png() {
                                 let bytes = buf.get_bytes();
                                 if !bytes.is_empty() {
@@ -101,20 +142,22 @@ impl ClipboardMonitor {
                                     *last = hash;
                                 }
                             }
-                        } else if let Ok(text) = ctx.get_text() {
-                            let text = text.trim().to_string();
-                            if !text.is_empty() {
-                                let hash = format!("{:x}", Sha256::digest(text.as_bytes()));
-                                let mut last = monitor.last_hash.lock().unwrap();
-                                *last = hash;
-                            }
                         }
                     } else {
                         // 正常流程：检测并保存
-                        if let Ok(image_data) = ctx.get_image() {
+                        let text = ctx.get_text().ok().map(|value| value.trim().to_string()).filter(|value| !value.is_empty());
+                        let html = ctx.get_html().ok().filter(|value| !value.trim().is_empty());
+                        let rtf = ctx.get_rich_text().ok().filter(|value| !value.trim().is_empty());
+                        if let Some(ref text) = text {
+                            if html.is_some() || rtf.is_some() {
+                                monitor.handle_rich_text(text, html.as_deref(), rtf.as_deref(), source_app.as_deref());
+                            } else if let Ok(image_data) = ctx.get_image() {
+                                monitor.handle_image(image_data, source_app.as_deref());
+                            } else {
+                                monitor.handle_text(text, source_app.as_deref());
+                            }
+                        } else if let Ok(image_data) = ctx.get_image() {
                             monitor.handle_image(image_data, source_app.as_deref());
-                        } else if let Ok(text) = ctx.get_text() {
-                            monitor.handle_text(&text, source_app.as_deref());
                         }
                     }
                 }));
@@ -172,6 +215,36 @@ impl ClipboardMonitor {
                 Ok(_) => self.notify_update(),
                 Err(e) => eprintln!("Failed to insert clipboard text: {}", e),
             }
+        }
+    }
+
+    /// 处理带 HTML/RTF 表示的文字；纯文本用于检索和降级粘贴。
+    fn handle_rich_text(
+        &self,
+        text: &str,
+        html: Option<&str>,
+        rtf: Option<&str>,
+        source_app: Option<&str>,
+    ) {
+        let hash = Self::rich_content_hash(text, html, rtf);
+        let mut last = self.last_hash.lock().unwrap();
+        if *last == hash {
+            return;
+        }
+        *last = hash.clone();
+        drop(last);
+
+        let source_name = source_app.and_then(|id| self.resolve_app_name(id));
+        match self.db.insert_rich_text(
+            text,
+            html,
+            rtf,
+            &hash,
+            source_app,
+            source_name.as_deref(),
+        ) {
+            Ok(_) => self.notify_update(),
+            Err(e) => eprintln!("Failed to insert rich clipboard text: {}", e),
         }
     }
 

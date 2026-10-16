@@ -4,7 +4,7 @@
 
 ## 项目概况
 
-- **当前版本**：v0.9.4
+- **当前版本**：v0.9.5
 - **技术栈**：Tauri 2 + SolidJS + Rust + SQLite
 - **目标平台**：macOS (Apple Silicon) + Windows
 - **仓库地址**：`git@github.com:ZJUzengkun/clipboard-ultra.git`（Public）
@@ -177,6 +177,16 @@ asset 协议 scope 需覆盖 Windows 驱动器：
 
 ---
 
+## 富文本架构
+
+- `clipboard_items.content` 始终保存纯文本，用于搜索、标签匹配与卡片摘要。
+- `html_content` / `rtf_content` 保存原始富文本格式；历史列表序列化时跳过，避免大字段拖慢面板唤起。
+- 粘贴富文本时同时写入 Text / HTML / RTF，目标应用不支持富文本时自动降级为纯文本。
+- 富文本与普通文字共用保留时间配置；编辑功能暂只支持普通文本，避免纯文本编辑后与 HTML/RTF 内容不一致。
+- OCR 不进入核心应用；未来先建立插件接口，再作为可选插件提供。
+
+---
+
 ## 前端交互规范
 
 ### 删除键作用域
@@ -277,6 +287,18 @@ commit message 中加 `[skip ci]` 可跳过 workflow（如纯文档更新）。
 - 闪退日志查看：`Console.app` 或 `log show --predicate 'process == "clipboard-ultra"' --last 5m`
 - Accessibility 权限：系统设置 → 隐私与安全 → 辅助功能
 - Automation 权限：系统设置 → 隐私与安全 → 自动化（System Events 需单独授权）
+- 主面板显示必须走 `hotkey::show_panel()`：在主线程中使用 AppKit 的
+  `NSEvent::mouseLocation()`、`NSScreen::visibleFrame()` 和
+  `NSWindow::setFrame_display()`，定位完成后再 `makeKeyAndOrderFront()`。
+- 不要重新引入“先显示再纠偏”、延迟重试或 `translateY(100%)` 这类把整页移出
+  窗口的入场状态；隐藏 WebView 恢复渲染与窗口 frame 更新存在竞态，会造成首次
+  反弹、连续呼出错位和闪烁。入场由 AppKit 把 NSWindow 从当前屏幕下边界外动画
+  到最终 frame（160ms），退出反向移出屏幕（120ms）；前端不参与窗口动画。
+- 所有收起路径统一调用 `hotkey::hide_panel()` / `dismiss_panel`，包括热键、失焦、
+  Escape 和粘贴；不要在前端直接 `window.hide()`，否则会绕过退出动画。
+- AppKit 的屏幕与窗口 frame 都使用 point 和左下角原点，不需要再做 Retina
+  缩放或 Tauri 物理/逻辑坐标换算。
+- `panel-shown` / `panel-hidden` 只负责前端聚焦与视图复位，不参与窗口几何。
 
 ---
 
@@ -317,4 +339,5 @@ npm run version             # 显示当前版本
 | v0.9.x | 开机自启 + 权限自检 + 呼出聚焦搜索框可配置 | ✅ 已发布 |
 | v0.9.2 | 使用频率统计 + 来源应用记录 + 卡片编辑 + 数据导入/导出 + 卡片放大与 Paste 风格头部 + 多屏光标定位 | ✅ 已发布（用户验证中） |
 | v0.9.4 | 修复多屏/镜像环境面板定位、连续呼出页面滚动偏移与入场闪烁 | ✅ 已发布 |
-| v1.0.0 | 生产就绪：上述功能实机稳定 + 无重大 bug 持续 2-3 周；候选增补：敏感内容防护、快速预览、真实来源 App 图标 | ⏳ 待验证后规划 |
+| v0.9.5 | 富文本剪贴板 + AppKit 原生面板动画/定位 + 收藏板入口语义优化 | ✅ 已发布 |
+| v1.0.0 | 生产就绪：上述功能实机稳定 + 无重大 bug 持续 2-3 周；候选增补：敏感内容防护、真实来源 App 图标 | ⏳ 待验证后规划 |
