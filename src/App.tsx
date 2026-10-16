@@ -281,12 +281,16 @@ function App() {
     // 入场流程：播滑入动画 + 聚焦搜索框（幂等，ready 守卫防重复播放）
     const playEntrance = () => {
       showTimestamp = Date.now();
+      // 搜索框可能在上次入场动画期间触发浏览器自动滚动；每次展示先强制归零。
+      window.scrollTo(0, 0);
       // 播放从底部滑入的入场动画。用 WAAPI 而非 CSS transition：
       // 隐藏窗口恢复渲染时 transition 起始态从未呈现过，会被折叠成跳变；
       // WAAPI 动画的 startTime 在渲染恢复后才分配，保证完整播放
       if (!ready()) {
         focusRegrabbed = false;
         requestAnimationFrame(() => {
+          // 与 WAAPI 动画在同一帧解除 CSS 隐藏态，避免先显示最终位置一帧后
+          // 又跳回动画起点造成闪烁。搜索框使用 preventScroll，不会再带动页面滚动。
           setReady(true);
           const app = document.querySelector(".app");
           if (app) {
@@ -301,7 +305,8 @@ function App() {
       if (focusSearchOnShow()) {
         requestAnimationFrame(() => {
           const input = document.querySelector(".search-bar input") as HTMLInputElement;
-          if (input) input.focus();
+          if (input) input.focus({ preventScroll: true });
+          window.scrollTo(0, 0);
         });
       }
     };
@@ -497,6 +502,7 @@ function App() {
   // 隐藏后后台重置视图：复位入场动画 → 落库待删项 → 清搜索/筛选 → 预加载最新数据
   const resetViewAfterHide = async () => {
     setReady(false);
+    window.scrollTo(0, 0);
     await commitDeletes();
     setKeyword("");
     setActiveTag("");

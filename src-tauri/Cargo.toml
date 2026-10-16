@@ -1,6 +1,6 @@
 [package]
 name = "clipboard-ultra"
-version = "0.9.3"
+version = "0.9.4"
 description = "A lightweight cross-platform clipboard history manager"
 authors = ["ZJUzengkun"]
 license = "MIT"

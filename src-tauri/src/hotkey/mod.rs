@@ -53,30 +53,26 @@ fn position_at_bottom(window: &tauri::WebviewWindow) {
         let work_area = monitor.work_area();
         let scale = monitor.scale_factor();
 
-        let screen_w = work_area.size.width as f64 / scale;
-        let screen_h = work_area.size.height as f64 / scale;
-        let offset_x = work_area.position.x as f64 / scale;
-        let offset_y = work_area.position.y as f64 / scale;
+        // work_area 和 cursor_position 都是物理坐标。这里必须继续使用物理坐标设置窗口：
+        // 若先换算成目标屏的逻辑坐标，Tauri 在窗口仍位于旧屏时可能按旧屏缩放比
+        // 再转回物理坐标，跨不同缩放比显示器时就会导致面板悬在屏幕中间。
+        let panel_height = (400.0 * scale).round() as u32;
+        let dock_margin = (5.0 * scale).round() as i32;
+        let x = work_area.position.x;
+        let y =
+            work_area.position.y + work_area.size.height as i32 - panel_height as i32 - dock_margin;
 
-        let panel_height = 400.0;
-        let dock_margin = 5.0;
-
-        // 设置窗口大小为工作区宽度 × 面板高度
-        let _ = window.set_size(tauri::LogicalSize::new(screen_w, panel_height));
-
-        // 定位到工作区最底部（留一点间距）
-        let x = offset_x;
-        let y = offset_y + screen_h - panel_height - dock_margin;
-
-        let _ = window.set_position(tauri::LogicalPosition::new(x, y));
+        // 设置窗口大小为目标屏工作区宽度 × 400 逻辑像素高，并贴近工作区底部。
+        let _ = window.set_size(tauri::PhysicalSize::new(work_area.size.width, panel_height));
+        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
 
         // 选屏与定位结果日志：含工作区原始数据与计算结果，供排查镜像/多屏定位错位
         crate::logger::log(&format!(
-            "panel: monitor={:?} multi_matched={} scale={} wa_pos=({},{}) wa_size=({},{}) -> pos=({:.0},{:.0}) size=({:.0},{})",
+            "panel: monitor={:?} multi_matched={} scale={} wa_pos=({},{}) wa_size=({},{}) -> pos=({},{}) size=({},{}) [physical]",
             monitor.name(), multi_matched, scale,
             work_area.position.x, work_area.position.y,
             work_area.size.width, work_area.size.height,
-            x, y, screen_w, panel_height
+            x, y, work_area.size.width, panel_height
         ));
         // 实际生效位置回读：若与目标不一致可直接定位是设置被系统修正还是计算错误
         if let (Ok(p), Ok(s)) = (window.outer_position(), window.outer_size()) {
@@ -120,8 +116,11 @@ pub fn register_shortcuts(app: &AppHandle) -> Result<(), Box<dyn std::error::Err
                                 let state = app.state::<crate::commands::AppState>();
                                 *state.previous_window_hwnd.lock().unwrap() = hwnd;
                             }
-                            position_at_bottom(&window);
                             let _ = window.show();
+                            // macOS 对隐藏窗口的几何更新可能延迟到窗口显示后才处理，
+                            // 导致首次呼出仍停留在上一次/配置中的位置。先 show（此时前端
+                            // 仍处于 translateY(100%) 的透明态），再定位，最后才聚焦播放入场。
+                            position_at_bottom(&window);
                             let _ = window.set_focus();
                             // 部分应用（如 Chrome）不让出焦点时 tauri://focus 不会触发，
                             // 主动通知前端播入场动画，避免面板停在 translateY(100%) 隐形态
